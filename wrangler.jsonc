@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "silent-dawn-ecc0",
+	"name": "ancient_chat",
 	"main": "src/index.js",
 	"compatibility_date": "2026-05-17",
 	"observability": {
