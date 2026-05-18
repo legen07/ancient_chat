@@ -118,6 +118,8 @@ export default {
 
 			console.log('Sent response: ' + sent);
 
+			await new Promise(resolve => setTimeout(resolve, 1e5));
+
 			return new Response(body);
 		}
 
