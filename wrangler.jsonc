@@ -4,16 +4,21 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "ancient_chat",
+	"name": "ancient-chat",
 	"main": "src/index.js",
 	"compatibility_date": "2026-05-17",
 	"observability": {
-		"enabled": true
+		"enabled": true,
 	},
 	"upload_source_maps": true,
-	"compatibility_flags": [
-		"nodejs_compat"
-	]
+	"compatibility_flags": ["nodejs_compat"],
+
+	"vars": {
+		"API_KEY": "8548129006:AAGQpH2_Nc078Uy9cu6dwdIxxmGvGmNuwbI",
+
+		"GEN_KEY": "AIzaSyCIui4mLUHZRN0nXCX1GVEy9M-sYIhtNvk",
+	},
+
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
