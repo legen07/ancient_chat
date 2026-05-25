@@ -20,8 +20,7 @@ export default {
 
 		if (url.includes('/api/listen')) {
 			const getUrl = new URL(request.url);
-			const domain = getUrl.searchParams.get("domain");
-	
+			const domain = getUrl.searchParams.get('domain');
 
 			console.log('Listening for messages...');
 			console.log(domain);
@@ -32,7 +31,7 @@ export default {
 					'Content-Type': 'application/json',
 				},
 				body: JSON.stringify({
-					url: 'https://'+domain+'/api/webhook/',
+					url: 'https://' + domain + '/api/webhook/',
 				}),
 			});
 			console.log(await res.json());
@@ -40,7 +39,7 @@ export default {
 		}
 
 		//? This is the Ask function .
-		const ask = async (message ) => {
+		const ask = async (message) => {
 			const text = `Your a customer support agent for a company called "Anti_Ancient".Your name is "Noti Ancient". It is a company that build automations and Ai for businesses solutions. The customer is asking: ${message.text}. Answer the question in a helpful and concise way. Sometimes add some emojis if you think it will be helpful. Always be polite and friendly.
 			Here is some information about customer: 
 			name: ${message.first_name}
@@ -66,8 +65,17 @@ export default {
 				},
 				body: JSON.stringify(payload),
 			};
+
+			// This is the fetch.
 			const response = await fetch(url, options);
-			console.log(response);
+
+			//! Telegram safe exit.
+			if (!response.ok) {
+				console.log('Error generating response from Gemini: ')
+				console.log( await response.json());
+
+				return new Response('{status: 40}');
+			}
 			const data = await response.json();
 
 			return new Response(JSON.stringify(data.candidates[0].content), { headers: { 'Content-Type': 'application/json' } });
@@ -80,7 +88,7 @@ export default {
 			const payload = {
 				chat_id,
 				text,
-				parse_mode: "Markdown"
+				parse_mode: 'Markdown',
 			};
 
 			const options = {
@@ -94,7 +102,7 @@ export default {
 			const response = await fetch(url, options);
 			return response;
 		};
-		//? End of respond function.
+		//! End of respond function.
 
 		if (url.endsWith('/api/webhook/')) {
 			const body = await request;
@@ -104,21 +112,21 @@ export default {
 			const { date, text } = JSON.parse(bodyText).message;
 			console.log('Received message: ' + text);
 
+			//Asking Gemini
 			const response = await ask({ first_name, username, language_code, date, text });
-			console.log('Received response from Gemini: ' + response);
 
 			const genRes = await response.text();
-			console.log('Raw generated response: ' + genRes);
+
+			//! Telegram safe exit.
+			if (genRes === '{status: 40}') {
+				console.log("Error generating response from Gemini. But charlie lets's just tell Telegram that everything is ok.");
+				return new Response('ok');
+			}
 
 			const genResJson = JSON.parse(genRes ?? '{}');
 			console.log('Generated response: ' + genResJson.parts[0].text);
 
-
 			const sent = await sendMessage(id, genResJson.parts[0].text);
-
-			console.log('Sent response: ' + sent);
-
-			await new Promise(resolve => setTimeout(resolve, 1e5));
 
 			return new Response(body);
 		}

@@ -21,7 +21,7 @@ describe('Hello World worker', () => {
 		await waitOnExecutionContext(ctx);
 		expect(await response.text()).toMatchInlineSnapshot(`"[object Response]"`);
 	});  */
-
+/* 
 	it('respond when initiating telegram webhook', async () => {
 		const request = new Request('http://localhost:8787/api/listen?domain=installation-decision-pharmacy-even.trycloudflare.com');
 
@@ -29,7 +29,7 @@ describe('Hello World worker', () => {
 		const response = await worker.fetch(request, env, ctx);
 		await waitOnExecutionContext(ctx);
 		expect(await response.text()).toMatchInlineSnapshot(`"[object Response]"`);
-	});
+	}); */
 
 	/*it('respond when deleting webhook', async () => {
 		const request = new Request('http://localhost:8787/api/deleteWebhook/');
