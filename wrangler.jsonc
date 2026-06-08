@@ -3,13 +3,13 @@
  * https://developers.cloudflare.com/workers/wrangler/configuration/
  */
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "ancient-chat",
-	"main": "src/index.js",
-	"compatibility_date": "2026-05-17",
-	"observability": {
-		"enabled": true,
-	},
-	"upload_source_maps": true,
-	"compatibility_flags": ["nodejs_compat"],
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ancient-chat",
+  "main": "src/index.js",
+  "compatibility_date": "2026-05-17",
+  "observability": {
+    "enabled": true,
+  },
+  "upload_source_maps": true,
+  "compatibility_flags": ["nodejs_compat"],
 }
