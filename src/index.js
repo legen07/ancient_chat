@@ -88,11 +88,14 @@ export default {
 
     //? Respond back to Telegram customer.
     const sendMessage = async (chat_id, text) => {
+				// text = text.replace(/[_*[\]()~`>#+=|{}.!£$€]/g, '\\$&');
+
+
       const url = "https://api.telegram.org/bot" + env.API_KEY + "/sendMessage";
       const payload = {
         chat_id,
         text,
-        parse_mode: "Markdown",
+        // parse_mode: "MarkdownV2",
       };
 
       const options = {
@@ -102,8 +105,11 @@ export default {
         },
         body: JSON.stringify(payload),
       };
+			console.log("aBOUT TO SEND MESSAGE TO tELEGRAM.")
 
       const response = await fetch(url, options);
+			console.log("Have sent message to the Telegram bot. ");
+			console.log(await response.json());
       return response;
     };
     //! End of respond function.

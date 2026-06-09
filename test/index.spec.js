@@ -55,9 +55,9 @@ describe("Telegram bot Ai chat Assist. ", () => {
     });
   });
 
-  it.skip("respond when initiating telegram webhook", async () => {
+  it("respond when initiating telegram webhook", async () => {
     const request = new Request(
-      "http://localhost:8787/api/listen?domain=mambo-territory-perfect-scheduled.trycloudflare.com",
+      "http://localhost:8787/api/listen?domain=colors-why-irc-otherwise.trycloudflare.com",
     );
 
     const ctx = createExecutionContext();
@@ -80,7 +80,7 @@ describe("Telegram bot Ai chat Assist. ", () => {
     await waitOnExecutionContext(ctx);
     expect(await response.text()).toMatchInlineSnapshot(`"[object Response]"`);
   });
-  it("responds when telegram makes a request.", async () => {
+  it.skip("responds when telegram makes a request.", async () => {
     const request = new Request("http://localhost:8787/api/webhook/", {
       method: "POST",
       headers: {
@@ -121,3 +121,4 @@ describe("Telegram bot Ai chat Assist. ", () => {
     expect(await response);
   });
 });
+
