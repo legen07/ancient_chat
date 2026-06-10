@@ -1,3 +1,4 @@
+import { Marked } from "marked";
 /**
  * Welcome to Cloudflare Workers! This is your first worker.
  *
@@ -11,6 +12,32 @@
 export default {
   async fetch(request, env, ctx) {
     const url = request.url;
+
+function markdownToHtml(text) {
+  // Convert markdown to HTML
+	console.log("Are you reaching here ? ")
+  const html = Marked.parse(text);
+
+  // Telegram only supports a subset of HTML tags
+  // Strip unsupported tags, keep only what Telegram allows
+  return html
+    .replace(/<p>(.*?)<\/p>/gs, '$1\n')
+    .replace(/<br\s*\/?>/g, '\n')
+    .replace(/<h[1-6]>(.*?)<\/h[1-6]>/gs, '<b>$1</b>\n')
+    .replace(/<ul>/g, '')
+    .replace(/<\/ul>/g, '')
+    .replace(/<ol>/g, '')
+    .replace(/<\/ol>/g, '')
+    .replace(/<li>(.*?)<\/li>/gs, '• $1\n')
+    .replace(/<strong>(.*?)<\/strong>/gs, '<b>$1</b>')
+    .replace(/<em>(.*?)<\/em>/gs, '<i>$1</i>')
+    .replace(/<code>(.*?)<\/code>/gs, '<code>$1</code>')
+    .replace(/<pre><code.*?>(.*?)<\/code><\/pre>/gs, '<pre>$1</pre>')
+    .replace(/<a href="(.*?)">(.*?)<\/a>/gs, '<a href="$1">$2</a>')
+    .replace(/<[^>]+>/g, '') // strip any remaining unsupported tags
+    .trim();
+}
+
 
     if (url.endsWith("/api/init/")) {
       const res = await fetch("https://api.telegram.org/" + env.API_KEY + "/getUpdates");
@@ -56,6 +83,8 @@ export default {
         ],
       };
 
+
+
       const url =
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
@@ -68,19 +97,35 @@ export default {
         body: JSON.stringify(payload),
       };
 
+			console.log("Asking Gemini with the following prompt: " + text);
+			console.log(message.text)
+
+
+		const prompt = `You are a customer support agent for a company called "Anti_Ancient".Your name is "Noti Ancient". It is a company that build automations and Ai for businesses solutions. Answer the question in a helpful and concise way. Sometimes add some emojis if you think it will be helpful. Always be polite and friendly.
+			Here is some information about customer:
+			name: ${message.first_name}
+			language_code: ${message.language_code}`
+
+		const response = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+			max_tokens: 1048,
+			messages: [
+		{content: prompt, role: "system"
+			}, {content: message.text, role: "user"
+		}]});
+		console.log(response);
+
       // This is the fetch.
-      const response = await fetch(url, options);
+      // const response = await fetch(url, options);
 
       //! Telegram safe exit.
-      if (!response.ok) {
+      /*if (!response.ok) {
         console.log("Error generating response from Gemini: ");
         console.log(await response.json());
 
         return new Response("{status: 40}");
-      }
-      const data = await response.json();
+      }*/
 
-      return new Response(JSON.stringify(data.candidates[0].content), {
+      return new Response(JSON.stringify(response), {
         headers: { "Content-Type": "application/json" },
       });
     };
@@ -88,14 +133,16 @@ export default {
 
     //? Respond back to Telegram customer.
     const sendMessage = async (chat_id, text) => {
-				// text = text.replace(/[_*[\]()~`>#+=|{}.!£$€]/g, '\\$&');
+				// text = text.replace(/[_*[\]()~`>#+=|{}.!\\]/g, '\\$&');
+console.log("Are you calling me ? ")
 
+			console.log(text);
 
       const url = "https://api.telegram.org/bot" + env.API_KEY + "/sendMessage";
       const payload = {
         chat_id,
-        text,
-        // parse_mode: "MarkdownV2",
+        text: text,
+        // parse_mode: "HTML",
       };
 
       const options = {
@@ -115,6 +162,7 @@ export default {
     //! End of respond function.
 
     if (url.endsWith("/api/webhook/")) {
+			console.log("Are you even reaching here. ? ")
       const body = await request;
       const bodyText = await body.text();
       console.log(bodyText);
@@ -126,7 +174,11 @@ export default {
       //Asking Gemini
       const response = await ask({ first_name, username, language_code, date, text });
 
-      const genRes = await response.text();
+			console.log(response);
+
+			const genRes = await response.text();
+
+
 
       //! Telegram safe exit.
       if (genRes === "{status: 40}") {
@@ -137,9 +189,10 @@ export default {
       }
 
       const genResJson = JSON.parse(genRes ?? "{}");
-      console.log("Generated response: " + genResJson.parts[0].text);
+      console.log("Generated response: ");
+			console.log( genResJson);
 
-      const sent = await sendMessage(id, genResJson.parts[0].text);
+      const sent = await sendMessage(id, genResJson.response);
 
       return new Response(body);
     }

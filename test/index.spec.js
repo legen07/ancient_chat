@@ -57,7 +57,7 @@ describe("Telegram bot Ai chat Assist. ", () => {
 
   it("respond when initiating telegram webhook", async () => {
     const request = new Request(
-      "http://localhost:8787/api/listen?domain=colors-why-irc-otherwise.trycloudflare.com",
+      "http://localhost:8787/api/listen?domain=dominant-paso-completed-resist.trycloudflare.com"
     );
 
     const ctx = createExecutionContext();
@@ -65,7 +65,7 @@ describe("Telegram bot Ai chat Assist. ", () => {
 
     const response = await worker.fetch(request, env, ctx);
     await waitOnExecutionContext(ctx);
-    // const text = await response.text();
+    // const text = awaiCHt response.text();
     // console.log(response);
     // const result = await response.json();
     console.log(await response.text());
