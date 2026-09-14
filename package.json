@@ -15,7 +15,7 @@
     "marked": "^18.0.5"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.16.13",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@vitest/ui": "^4.1.8",
     "vitest": "^4.1.8",
     "wrangler": "^4.92.0"
