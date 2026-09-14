@@ -1,0 +1,25 @@
+---
+name: Security Issue
+about: Report a security vulnerability
+title: "[Security]: "
+labels: security
+assignees: ""
+---
+
+> ⚠️ **Please do not discuss security issues in public.** Send an email to the maintainers instead.
+
+## Description
+
+Describe the security vulnerability you've discovered.
+
+## Impact
+
+Explain the potential impact of this vulnerability.
+
+## Reproduction
+
+Steps to reproduce the vulnerability (if applicable).
+
+## Suggested Fix
+
+If you have ideas for a fix, describe them here.

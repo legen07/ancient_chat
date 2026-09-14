@@ -1,0 +1,19 @@
+---
+name: Documentation
+about: Report an issue or suggest an improvement to documentation
+title: "[Docs]: "
+labels: documentation
+assignees: ""
+---
+
+## Description
+
+Describe the documentation issue or improvement suggestion.
+
+## Location
+
+Link to the relevant documentation page or file.
+
+## Suggested Change
+
+Describe the change you'd like to see in the documentation.

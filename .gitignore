@@ -162,9 +162,37 @@ dist
 .pnp.\*
 
 # wrangler project
-
 .dev.vars*
 !.dev.vars.example
 .env*
 !.env.example
 .wrangler/
+
+# Vitest coverage output
+coverage/
+.nyc_output/
+
+# Build output
+dist/
+upload/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Commitlint
+commitlint.config.js
+
+# Debug logs
+debug.log

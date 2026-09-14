@@ -1,0 +1,10 @@
+# Example environment variables for Ancient Chat
+# Copy this file to .dev.vars and fill in your actual keys
+
+# Telegram Bot API Token
+# Get one at https://t.me/BotFather
+API_KEY=your_telegram_bot_token_here
+
+# Google Generative AI API Key
+# Get one at https://aistudio.google.com/app/apikey
+GEN_KEY=your_google_generative_ai_key_here
