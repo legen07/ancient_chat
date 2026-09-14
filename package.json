@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "cloudflare": "^6.3.0",
-    "marked": "^18.0.5"
+    "marked": "^18.0.12"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.13",
