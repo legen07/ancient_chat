@@ -106,12 +106,12 @@ function markdownToHtml(text) {
 			name: ${message.first_name}
 			language_code: ${message.language_code}`
 
-		const response = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
-			max_tokens: 1048,
-			messages: [
-		{content: prompt, role: "system"
-			}, {content: message.text, role: "user"
-		}]});
+		const response = await env.AI.run("google/gemini-3.5-flash", {
+			contents: [{parts: [{text: message.text}], role: "user"}],
+			generationConfig: {temperature: 0.3},
+			systemInstruction: {
+				parts: [{text: prompt}],
+			}});
 		console.log(response);
 
       // This is the fetch.

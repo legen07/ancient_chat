@@ -191,8 +191,7 @@ Thumbs.db
 *.temp
 *.bak
 
-# Commitlint
-commitlint.config.js
-
 # Debug logs
 debug.log
+
+# Dependabot auto-generated PRs are tracked via GitHub
