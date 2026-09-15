@@ -1,6 +1,7 @@
 {
   "name": "ancient_chat",
   "version": "0.0.0",
+  "description": "A Cloudflare Workers-powered Telegram AI chat bot that leverages Google Gemini to deliver intelligent customer support. Built for speed, deployed globally, and designed for the modern web.",
   "private": true,
   "type": "module",
   "scripts": {
