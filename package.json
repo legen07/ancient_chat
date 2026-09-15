@@ -12,7 +12,7 @@
     "ui": "vitest --ui"
   },
   "dependencies": {
-    "cloudflare": "^6.3.0",
+    "cloudflare": "^7.1.0",
     "marked": "^18.0.5"
   },
   "devDependencies": {
