@@ -6,7 +6,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ancient-chat",
   "main": "src/index.js",
-  "compatibility_date": "2026-10-9",
+  "compatibility_date": "2026-10-09",
   "observability": {
     "enabled": true,
   },
