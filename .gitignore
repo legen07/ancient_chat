@@ -1,4 +1,6 @@
 
+bun.lock
+
 *.pem
 
 # Logs
