@@ -1,0 +1,38 @@
+# Commit Message Template
+#
+# Format: <type>(<scope>): <subject>
+#
+# Types:
+#   feat      → A new feature
+#   fix       → A bug fix
+#   docs      → Documentation changes
+#   style     → Code style changes (formatting, semicolons, etc.)
+#   refactor  → Code change that neither fixes a bug nor adds a feature
+#   perf      → A performance improvement
+#   test      → Adding or updating tests
+#   build     → Changes that affect the build system or dependencies
+#   ci        → Changes to CI configuration files and scripts
+#   chore     → Other changes that don't modify src or test files
+#   revert    → Reverts a previous commit
+#
+# Scope: Optional. The section of the codebase affected (e.g., worker, api, ui).
+#
+# Subject: A short, imperative description of the change.
+#
+# Body: Optional. Detailed explanation of the change.
+#
+# Footer: Optional. Issue references (e.g., Closes #123, BREAKING CHANGE).
+#
+# Examples:
+#   feat(worker): add Gemini AI response handling
+#   fix(api): resolve webhook payload parsing error
+#   docs(readme): update setup instructions
+#   test: add unit tests for Telegram webhook handler
+#   chore(deps): update wrangler to v4.92
+
+# ---
+# Do not modify lines starting with '#'.
+# The first line is the commit subject, keep it under 72 characters.
+# Separate the subject from body with a blank line.
+# Wrap the body at 72 characters.
+# ---

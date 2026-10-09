@@ -1,0 +1,69 @@
+# Git Attributes
+
+# Line endings — ensure LF in repository, checkout based on platform
+* text=auto
+
+# Source files — always use LF
+*.js text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.jsx text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.svg text eol=lf
+*.xml text eol=lf
+
+# Configuration files
+*.config.js text eol=lf
+*.config.ts text eol=lf
+*.config.mjs text eol=lf
+*.jsonc text eol=lf
+*.editorconfig text eol=lf
+*.gitignore text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+
+# Binary files — do not attempt line ending conversion
+*.pem binary
+*.key binary
+*.p12 binary
+*.pfx binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+
+# Export-ignore files (not included in archives)
+.dev.vars export-ignore
+.env export-ignore
+.wrangler/ export-ignore
+node_modules/ export-ignore
+
+# Denote files that should not be diffed
+*.pem binary
+
+# Language-specific
+*.js linguist-language=JavaScript
+*.mjs linguist-language=JavaScript
+*.cjs linguist-language=JavaScript
+*.json linguist-language=JSON
+*.md linguist-language=Markdown
+*.yml linguist-language=YAML
+*.yaml linguist-language=YAML
