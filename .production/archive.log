@@ -1,0 +1,294 @@
+================================================================================
+ancient_chat cleanup archive — useless code removed from source
+Generated: 2026-10-09
+Source of truth: `git show HEAD:src/index.js` (373 lines) -> cleaned src/index.js (258 lines)
+Every block below is verbatim as it existed before removal. Corresponding
+useless *files* were moved to ./production/.
+================================================================================
+
+
+--------------------------------------------------------------------------------
+[1] src/index.js — unused import: `marked`
+Reason: only caller was the dead `markdownToHtml()` function (block [2]).
+        Dependency `marked` removed from package.json as a result.
+--------------------------------------------------------------------------------
+
+import { Marked } from "marked";
+
+
+--------------------------------------------------------------------------------
+[2] src/index.js — dead function `markdownToHtml()`
+Reason: defined but never called anywhere in the repo (grep confirmed: only the
+        definition exists). Also contained a debug log "Are you reaching here ?".
+--------------------------------------------------------------------------------
+
+		function markdownToHtml(text) {
+			// Convert markdown to HTML
+			console.log("Are you reaching here ? ")
+			const html = Marked.parse(text);
+
+			// Telegram only supports a subset of HTML tags
+			// Strip unsupported tags, keep only what Telegram allows
+			return html
+				.replace(/<p>(.*?)<\/p>/gs, '$1\n')
+				.replace(/<br\s*\/?>/g, '\n')
+				.replace(/<h[1-6]>(.*?)<\/h[1-6]>/gs, '<b>$1</b>\n')
+				.replace(/<ul>/g, '')
+				.replace(/<\/ul>/g, '')
+				.replace(/<ol>/g, '')
+				.replace(/<\/ol>/g, '')
+				.replace(/<li>(.*?)<\/li>/gs, '• $1\n')
+				.replace(/<strong>(.*?)<\/strong>/gs, '<b>$1</b>')
+				.replace(/<em>(.*?)<\/em>/gs, '<i>$1</i>')
+				.replace(/<code>(.*?)<\/code>/gs, '<code>$1</code>')
+				.replace(/<pre><code.*?>(.*?)<\/code><\/pre>/gs, '<pre>$1</pre>')
+				.replace(/<a href="(.*?)">(.*?)<\/a>/gs, '<a href="$1">$2</a>')
+				.replace(/<[^>]+>/g, '') // strip any remaining unsupported tags
+				.trim();
+		}
+
+
+--------------------------------------------------------------------------------
+[3] src/index.js — unused boilerplate comment block (create-worker template)
+Reason: stock template text, not project documentation.
+--------------------------------------------------------------------------------
+
+/**
+ * Welcome to Cloudflare Workers! This is your first worker.
+ *
+ * - Run `npm run dev` in your terminal to start a development server
+ * - Open a browser tab at http://localhost:8787/ to see your worker in action
+ * - Run `npm run deploy` to publish your worker
+ *
+ * Learn more at https://developers.cloudflare.com/workers/
+ */
+
+
+--------------------------------------------------------------------------------
+[4] src/index.js — dead endpoint `/api/init/`
+Reason: unreachable from any client of this bot (the settings page and
+        /api/listen cover webhook setup; nothing linked to /api/init/).
+        Also malformed: it omits the `bot` prefix in the Telegram URL
+        (`https://api.telegram.org/<KEY>/getUpdates` instead of
+        `https://api.telegram.org/bot<KEY>/getUpdates`), so it could never
+        work anyway.
+--------------------------------------------------------------------------------
+
+    if (url.endsWith("/api/init/")) {
+      const res = await fetch("https://api.telegram.org/" + env.API_KEY + "/getUpdates");
+
+      return new Response(res);
+    }
+
+
+--------------------------------------------------------------------------------
+[5] src/index.js — dead Gemini REST scaffolding inside `ask()`
+Reason: the actual model call is `env.AI.run("@cf/meta/llama-3.2-3b-instruct", ...)`.
+        `text`, `payload`, `url`, `options` were built and never sent (the
+        `fetch(url, options)` line was commented out). This is also the only
+        place `env.GEN_KEY` was referenced -> GEN_KEY removed from
+        .dev.vars.example, README and the test env as a result.
+--------------------------------------------------------------------------------
+
+      const text = `Your a customer support agent for a company called "Anti_Ancient".Your name is "Noti Ancient". It is a company that build automations and Ai for businesses solutions. The customer is asking: ${message.text}. Answer the question in a helpful and concise way. Sometimes add some emojis if you think it will be helpful. Always be polite and friendly.
+			Here is some information about customer:
+			name: ${message.first_name}
+			language_code: ${message.language_code}
+
+			`;
+
+      const payload = {
+        contents: [
+          {
+            parts: [{ text }],
+          },
+        ],
+      };
+
+
+
+      const url =
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
+      const options = {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": env.GEN_KEY,
+        },
+        body: JSON.stringify(payload),
+      };
+
+			console.log("Asking Gemini with the following prompt: " + text);
+			console.log(message.text)
+
+
+		const prompt = `You are a customer support agent for a company called "Anti_Ancient".Your name is "Noti Ancient". It is a company that build automations and Ai for businesses solutions. Answer the question in a helpful and concise way. Sometimes add some emojis if you think it will be helpful. Always be polite and friendly.
+			Here is some information about customer:
+			name: ${message.first_name}
+			language_code: ${message.language_code}`
+
+
+--------------------------------------------------------------------------------
+[6] src/index.js — commented-out fetch + commented-out "safe exit" block in ask()
+Reason: both were already dead (commented out) before the cleanup.
+--------------------------------------------------------------------------------
+
+      // This is the fetch.
+      // const response = await fetch(url, options);
+
+      //! Telegram safe exit.
+      /*if (!response.ok) {
+        console.log("Error generating response from Gemini: ");
+        console.log(await response.json());
+
+        return new Response("{status: 40}");
+      }*/
+
+
+--------------------------------------------------------------------------------
+[7] src/index.js — debug noise in ask() / sendMessage() / webhook handler
+Reason: conversational debug logs ("Are you calling me ?", "aBOUT TO SEND
+        MESSAGE TO tELEGRAM.", ...) and a commented-out escaping helper.
+        Functional logs (Telegram API responses, "Received message",
+        "Generated response") were kept.
+--------------------------------------------------------------------------------
+
+		console.log("Raw AI Response:", response, typeof response);
+
+	// in sendMessage():
+				// text = text.replace(/[_*[\]()~`>#+=|{}.!\\]/g, '\\$&');
+console.log("Are you calling me ? ")
+
+			console.log(text);
+
+			console.log("aBOUT TO SEND MESSAGE TO tELEGRAM.")
+
+			console.log("Have sent message to the Telegram bot. ");
+
+        // parse_mode: "HTML",
+
+	// in webhook handler:
+			console.log("Are you even reaching here. ? ")
+
+
+--------------------------------------------------------------------------------
+[8] src/index.js — dead "{status: 40}" branch in the webhook handler
+Reason: `ask()` never returns the literal string "{status: 40}" (that path was
+        the commented-out Gemini error handler, block [6]), so this branch was
+        unreachable.
+--------------------------------------------------------------------------------
+
+      //! Telegram safe exit.
+      if (genRes === "{status: 40}") {
+        console.log(
+          "Error generating response from Gemini. But charlie lets's just tell Telegram that everything is ok.",
+        );
+        return new Response("ok");
+      }
+
+
+--------------------------------------------------------------------------------
+[9] src/index.js — unused values
+Reason: `username` and `date` were destructured and passed to ask() but ask()
+        only reads first_name / language_code / text. `sent` captured a return
+        value that was never read. `const body = await request` was an extra
+        alias for the request (kept as `request.text()`).
+--------------------------------------------------------------------------------
+
+      const { id, first_name, username, language_code } = update.message.from;
+      const { date, text } = update.message;
+
+      const response = await ask({ first_name, username, language_code, date, text });
+
+      const sent = await sendMessage(id, genResJson.response);
+
+      const body = await request;
+      const bodyText = await body.text();
+
+
+--------------------------------------------------------------------------------
+[10] src/index.js — response body fix (behavior note, not just dead code)
+Reason: `return new Response(body)` where `body` was the already-consumed
+        Request produced the literal body "[object Request]" (verified with
+        node). Telegram only inspects the HTTP status, so the handler now
+        returns the conventional "ok". If you need the old behavior, it is:
+--------------------------------------------------------------------------------
+
+      return new Response(body);
+
+
+--------------------------------------------------------------------------------
+[11] package.json — orphaned dependencies removed
+Reason: no remaining source references after blocks [1], [5].
+        - dependencies:        marked, cloudflare
+        - devDependencies:     @cloudflare/vitest-pool-workers
+        - scripts.test:        "vitest test" -> "vitest run"
+          (bare `vitest test` treated "test" as a filename filter and started
+           watch mode; `vitest run` is the non-watch invocation.)
+        Lockfile resynced with `npm install` (package-lock.json -1710 lines).
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+[12] .vscode/settings.json — stale key removed
+Reason: "oxc.fmt.configPath": "./vite.config.ts" pointed at a file that never
+        existed (the repo had vite.config.js, now moved to ./production/) and
+        no oxc formatter is installed.
+--------------------------------------------------------------------------------
+
+  "oxc.fmt.configPath": "./vite.config.ts",
+
+
+--------------------------------------------------------------------------------
+[13] Docs aligned with the cleanup
+Reason: they described removed code/files.
+        - README: dropped the "Markdown Support" feature bullet (markdownToHtml
+          was dead), dropped GEN_KEY from the env example, dropped the dead
+          CONTRIBUTING.md link (file never existed), corrected "Google Gemini"
+          -> Workers AI (the Gemini fetch was commented out), corrected the
+          Project Structure tree (test/ -> tests/, removed .github/ and
+          vite.config.js which do not exist), corrected the testing line
+          (Workers pool config moved to ./production/).
+        - .dev.vars.example: dropped GEN_KEY (only consumer was block [5]).
+        - tests/webhook-settings.spec.ts: dropped GEN_KEY from the mock env.
+        - src/pages/webhook-settings.js: dropped references to standalone-run.js
+          and "the Vitest Workers pool" from the file header comment.
+================================================================================
+
+
+================================================================================
+FILES MOVED TO ./production/ (not deleted — recover them from there)
+--------------------------------------------------------------------------------
+  standalone-run.js              alternative dev server; imports
+                                 `startWorkersDevServer` from the `cloudflare`
+                                 package, an export that does not exist in
+                                 cloudflare@6.3.0 -> would crash on launch.
+                                 Its dependency `cloudflare` is now removed.
+  test_webhook.py                ad-hoc Python probe against a deployed worker
+                                 (hardcoded placeholder worker URL); not part
+                                 of the test suite. Contains an unterminated
+                                 string literal on line 81 (never parsed).
+  commitlint.config.js           invalid JavaScript (top-level JSON object with
+                                 string keys -> syntax error); commitlint is
+                                 not in package.json and no git hook uses it.
+  vite.config.js                 Vite dev-server proxy config; there is no
+                                 Vite app in this repo (no index.html, no
+                                 vite dependency, no `vite`/`vp` script).
+  vitest.workers-pool.config.js  (was vitest.config.js) @cloudflare/vitest-
+                                 pool-workers config; it failed to start here
+                                 ("You must be logged in to use wrangler dev in
+                                 remote mode" because wrangler.jsonc sets
+                                 ai.remote). The working node-pool config was
+                                 promoted to ./vitest.config.js (existed as
+                                 vitest.simple.config.mjs).
+  index.spec.js                  (was test/index.spec.js) legacy worker test;
+                                 all meaningful cases were `it.skip`'d, one
+                                 "test" asserted on an inline snapshot of "{}",
+                                 and it needs the workers pool that cannot run
+                                 here. The live suite is tests/.
+  regression.spec.ts             (was tests/regression.spec.ts) reads
+                                 /home/joe/node_modules/@deepseek-ai/dsh-llm-
+                                 pi-ai — an unrelated DSH checkout, not this
+                                 project; 2/4 tests were failing.
+================================================================================

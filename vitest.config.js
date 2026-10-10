@@ -1,16 +1,8 @@
-import { defineConfig } from "vitest/config";
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
-
+import { defineConfig } from 'vitest/config'
 export default defineConfig({
-  plugins: [
-    cloudflareTest({
-      wrangler: { configPath: "./wrangler.jsonc" },
-      miniflare: {
-        compatibility_flags: ["nodejs_compat"],
-      },
-    }),
-  ],
   test: {
-    exclude: ["telegram-tt", "**/node_modules/**"],
+    include: ['tests/**/*.spec.ts'],
+    globals: true,
+    environment: 'node',
   },
-});
+})

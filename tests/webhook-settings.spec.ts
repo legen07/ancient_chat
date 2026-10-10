@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index.js";
 import { validateWebhookUrl } from "../src/lib/telegram.js";
 
-const env = { API_KEY: "123:test-token", GEN_KEY: "gen-key" };
+const env = { API_KEY: "123:test-token" };
 const ctx = {};
 
 const jsonResponse = (data) =>

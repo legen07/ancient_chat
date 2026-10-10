@@ -1,9 +1,8 @@
 /**
  * Server-rendered settings page for the Telegram webhook.
  *
- * The page is a plain HTML string so it works with `wrangler dev`,
- * `standalone-run.js` and the Vitest Workers pool without any module
- * rules or bundler configuration.
+ * The page is a plain HTML string so it works with `wrangler dev` and the
+ * Vitest node pool without any module rules or bundler configuration.
  */
 
 const escapeHtml = (value) =>

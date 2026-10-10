@@ -8,15 +8,10 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "start": "wrangler dev",
-    "test": "vitest test",
+    "test": "vitest run",
     "ui": "vitest --ui"
   },
-  "dependencies": {
-    "cloudflare": "^6.3.0",
-    "marked": "^18.0.5"
-  },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.16.13",
     "@vitest/ui": "^4.1.8",
     "vitest": "^4.1.8",
     "wrangler": "^4.131.2"
