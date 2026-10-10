@@ -71,6 +71,17 @@ files outside this repo. `bun run test` goes through Vitest and is safe.
   promise and await it (see `runWorker` in `tests/streaming-reply.spec.ts`)
   so background generations finish before assertions.
 
+## Telegram Secretary Bots & Chat Automation
+
+Detailed Telegram Secretary Bot / Secretary Mode / Chat Automation architecture, docs and
+usage: [docs/telegram-chat-automation/tg-secretary-chat-automation.md](./docs/telegram-chat-automation/tg-secretary-chat-automation.md).
+
+That file is a super-compact orientation card — for proper lookup and reference follow its
+**Detailed documentation** links (Bot Features guide, Bot API reference, Bot API changelog,
+official announcement, TOS §5.4) and work from those pages, never from memory or from this
+AGENTS.md. Refresh the verbatim local extracts with
+`python3 .telegram-docs-src/extract.py`.
+
 # Cloudflare Workers
 
 STOP. Your knowledge of Cloudflare Workers APIs and limits may be outdated. Always retrieve current documentation before any Workers, KV, R2, D1, Durable Objects, Queues, Vectorize, AI, or Agents SDK task.
