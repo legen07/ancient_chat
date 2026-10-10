@@ -20,6 +20,41 @@ export async function callTelegram(env, method, params = {}) {
 }
 
 /**
+ * Send (or update) an ephemeral streaming preview of a message that is
+ * still being generated — Bot API 10.1+. Drafts live for ~30 seconds and
+ * must be persisted with sendRichMessage once the reply is complete.
+ *
+ * https://core.telegram.org/bots/api#sendrichmessagedraft
+ */
+export async function sendRichMessageDraft(env, params) {
+  return callTelegram(env, "sendRichMessageDraft", params);
+}
+
+/**
+ * Plain-text variant of the streaming preview (no parse mode).
+ * https://core.telegram.org/bots/api#sendmessagedraft
+ */
+export async function sendMessageDraft(env, params) {
+  return callTelegram(env, "sendMessageDraft", params);
+}
+
+/**
+ * Send a persistent Rich Message (Rich Markdown / Rich HTML / blocks).
+ * https://core.telegram.org/bots/api#sendrichmessage
+ */
+export async function sendRichMessage(env, params) {
+  return callTelegram(env, "sendRichMessage", params);
+}
+
+/**
+ * Send a regular text message. No parse mode by default, so callers stay
+ * in control of formatting (and always have a safe verbatim fallback).
+ */
+export async function sendMessage(env, params) {
+  return callTelegram(env, "sendMessage", params);
+}
+
+/**
  * Validate a webhook URL coming from the settings page (or the API).
  * Returns { value } on success, { error } on failure.
  *

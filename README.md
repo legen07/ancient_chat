@@ -13,7 +13,9 @@ A Cloudflare Workers-powered Telegram AI chat bot that runs on Cloudflare Worker
 
 ## Features
 
-- 🤖 **AI-Powered Responses** — Workers AI (Llama 3.2) for smart, conversational replies
+- 🤖 **AI-Powered Responses** — Workers AI (Llama 3.2 1B Instruct) for smart, conversational replies
+- ⚡ **Streaming Replies** — tokens stream live into a Telegram draft message (`sendRichMessageDraft`) with a user-facing Stop button
+- 📐 **Rich Markdown** — replies ship as Bot API 10.1 Rich Messages (GitHub Flavored Markdown: lists, tables, code blocks, LaTeX), with a plain-text fallback
 - ⚡ **Edge-Runtime Performance** — Deployed on Cloudflare Workers' global network
 - 📱 **Telegram Bot Integration** — Webhook-based Telegram bot handling
 - 🔒 **Secure by Default** — Environment-based API key management

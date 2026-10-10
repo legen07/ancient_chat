@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vitest test suite with Cloudflare Workers pool
 - Vite+ development configuration
 - Environment-based API key management
+- Streaming AI replies via Telegram Rich Message drafts (`sendRichMessageDraft`) with a Stop button
+- Rich Markdown (GFM) reply formatting via `sendRichMessage`, with plain-text fallbacks
+- Stop-button handling (`stopped_message_generation` updates)
+
+### Changed
+
+- Replies now stream from `@cf/meta/llama-3.2-1b-instruct` (SSE) instead of a blocking 3B call
+- The webhook acknowledges Telegram immediately and answers in `ctx.waitUntil`
 
 ## [0.1.0] - 2026-09-09
 

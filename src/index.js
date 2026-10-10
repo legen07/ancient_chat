@@ -1,3 +1,4 @@
+import { answerMessage, stopGeneration } from "./lib/answer.js";
 import { callTelegram, validateWebhookUrl } from "./lib/telegram.js";
 import { renderWebhookSettingsPage } from "./pages/webhook-settings.js";
 
@@ -166,42 +167,9 @@ export default {
       });
     }
 
-    // Ask the AI model for a customer-support reply.
-    async function ask(message) {
-      const response = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
-        prompt: `System: You are a customer support agent for a company called "Anti_Ancient". Your name is "Noti Ancient". It is a company that build automations and Ai for businesses solutions. Answer the question in a helpful and concise way. Sometimes add some emojis if you think it will be helpful. Always be polite and friendly.\n\nHere is some information about customer:\nname: ${message.first_name}\nlanguage_code: ${message.language_code}\n\nUser: ${message.text}`,
-        parameters: {
-          temperature: 0.3,
-          max_tokens: 2048
-        }
-      });
-      const aiText = (response && response.response) || (response && response.text) || (typeof response === 'string' ? response : JSON.stringify(response));
-
-      return new Response(JSON.stringify({ response: aiText }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    // Respond back to the Telegram customer.
-    const sendMessage = async (chat_id, text) => {
-      const url = "https://api.telegram.org/bot" + env.API_KEY + "/sendMessage";
-      const payload = {
-        chat_id,
-        text,
-      };
-
-      const options = {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      };
-
-      const response = await fetch(url, options);
-      console.log(await response.json());
-      return response;
-    };
+    // Ask the AI model for a customer-support reply (see src/lib/answer.js —
+    // the reply is streamed into a Telegram Rich Message draft and then
+    // persisted with sendRichMessage).
 
     if (url.endsWith("/api/webhook/")) {
       const bodyText = await request.text();
@@ -216,23 +184,52 @@ export default {
         update = null;
       }
 
-      if (!update || !update.message || !update.message.text) {
+      if (!update) {
+        return new Response("ok");
+      }
+
+      // The user pressed Stop on a streaming draft.
+      if (update.stopped_message_generation) {
+        const stopped = update.stopped_message_generation;
+        const cancelled = stopGeneration(stopped.chat && stopped.chat.id, stopped.draft_id);
+        console.log(
+          "Stop pressed for draft " + stopped.draft_id + (cancelled ? " (cancelled)" : " (not running)"),
+        );
+        return new Response("ok");
+      }
+
+      if (!update.message || !update.message.text) {
         console.log("Ignoring update without a text message.");
         return new Response("ok");
       }
 
-      const { id, first_name, language_code } = update.message.from;
-      const { text } = update.message;
-      console.log("Received message: " + text);
+      const message = update.message;
+      const chat = message.chat || { id: message.from.id, type: "private" };
+      console.log("Received message: " + message.text);
 
-      const response = await ask({ first_name, language_code, text });
-      const genRes = await response.text();
+      // Draft ids must be non-zero; the message id is unique per chat and
+      // makes follow-up drafts animate instead of swapping abruptly.
+      const draftId =
+        message.message_id > 0 ? message.message_id : Math.floor(Math.random() * 1000000000);
 
-      const genResJson = JSON.parse(genRes ?? "{}");
-      console.log("Generated response: ");
-      console.log(genResJson);
+      // Answer in the background: Telegram only needs a fast "ok", while the
+      // streamed draft updates go out as separate Bot API calls.
+      const task = answerMessage({
+        env,
+        chat,
+        draftId,
+        from: message.from || {},
+        text: message.text,
+        threadId: message.message_thread_id,
+      }).catch((err) => {
+        console.log("Failed to answer message: " + (err && err.stack ? err.stack : String(err)));
+      });
 
-      await sendMessage(id, genResJson.response);
+      if (ctx && typeof ctx.waitUntil === "function") {
+        ctx.waitUntil(task);
+      } else {
+        await task;
+      }
 
       return new Response("ok");
     }
