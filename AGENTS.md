@@ -1,3 +1,76 @@
+# Ancient Chat
+
+Telegram AI customer-support bot running on Cloudflare Workers. A Telegram
+webhook feeds each text message into Workers AI
+(`@cf/meta/llama-3.2-1b-instruct`, streamed), and the reply is streamed back
+to the user as a Telegram **Rich Message**.
+
+## Module map
+
+- `src/index.js` — Worker entry: webhook settings page, webhook setup/delete
+  endpoints, and the `/api/webhook/` handler. The handler acks Telegram with
+  `ok` immediately and runs the reply in `ctx.waitUntil(...)`.
+- `src/lib/ai.js` — prompt builder + `streamCompletion`/`streamTokens`: an
+  async generator over the SSE stream returned by
+  `env.AI.run(model, { stream: true })` (frames look like
+  `data: {"response":"<token>"}`).
+- `src/lib/answer.js` — the streaming pipeline and its throttling/fallbacks.
+  Exports `answerMessage` and `stopGeneration`.
+- `src/lib/rich.js` — sanitises model Markdown into Telegram Rich Markdown
+  (GFM): closes unterminated ``` fences, strips unclosed inline markers,
+  enforces the 32768-char limit, provides a plain-text fallback.
+- `src/lib/telegram.js` — thin Bot API helpers (`callTelegram`,
+  `sendRichMessageDraft`, `sendMessageDraft`, `sendRichMessage`,
+  `sendMessage`, `validateWebhookUrl`).
+- `src/pages/webhook-settings.js` — server-rendered settings page (plain HTML
+  string; no bundler module rules involved).
+
+## Invariants (do not break these)
+
+- Private chats stream through `sendRichMessageDraft` (ephemeral ~30s
+  preview, animated when `draft_id` is reused); the finished reply MUST be
+  persisted with `sendRichMessage`, because drafts disappear on their own.
+  Drafts are **private-chat only** — group/channel chats skip drafts and send
+  the final Rich Message once.
+- The "Thinking…" placeholder is `<tg-thinking>…</tg-thinking>` in the rich
+  draft, or an empty-text `sendMessageDraft` as fallback.
+- Draft refreshes are throttled (~800 ms, see `DRAFT_INTERVAL_MS`); passing
+  `draftIntervalMs: 0` exists for tests only.
+- Every rich send has a plain-text fallback (no `parse_mode`): if Telegram
+  rejects the Markdown, the reply must still arrive verbatim.
+- `stopped_message_generation` updates cancel in-flight generations via an
+  in-memory registry — best-effort only, since the update arrives on a
+  different request that may hit another Worker isolate.
+- Bot API reference (Rich Messages, streaming replies): https://core.telegram.org/bots/api
+  and https://core.telegram.org/bots/features#streaming-replies
+
+## Commands
+
+This is a **Bun project** (`packageManager: bun@1.3.14`) — drive it with
+`bun`/`bunx`, not `npm`/`npx`.
+
+| Command | Purpose |
+|---------|---------|
+| `bun run test` | Run the Vitest suite (package.json script; picks up `tests/**`) |
+| `bun run ui` | Vitest UI |
+| `bun run dev` | Local development (`wrangler dev`) |
+| `bunx wrangler deploy --dry-run` | Bundle-check without deploying |
+| `bun run deploy` | Deploy to Cloudflare |
+| `bunx wrangler types` | Regenerate `worker-configuration.d.ts` after binding changes |
+
+Do NOT run bare `bun test` (Bun's own runner): it also picks up
+`production/*.spec.ts`, which are legacy leftovers asserting against unrelated
+files outside this repo. `bun run test` goes through Vitest and is safe.
+
+## Testing notes
+
+- Telegram is stubbed by replacing `globalThis.fetch`; return a **fresh
+  `Response` per call** — bodies are single-use and reusing one throws
+  "Body already used" mid-test.
+- The worker must be invoked with a `ctx` exposing `waitUntil`; capture the
+  promise and await it (see `runWorker` in `tests/streaming-reply.spec.ts`)
+  so background generations finish before assertions.
+
 # Cloudflare Workers
 
 STOP. Your knowledge of Cloudflare Workers APIs and limits may be outdated. Always retrieve current documentation before any Workers, KV, R2, D1, Durable Objects, Queues, Vectorize, AI, or Agents SDK task.

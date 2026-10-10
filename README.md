@@ -39,7 +39,7 @@ bun install
 bun run dev
 
 # Run tests
-bun test
+bun run test
 
 # Deploy to Cloudflare
 bun run deploy
@@ -58,7 +58,7 @@ API_KEY=your_telegram_bot_token
 | Command       | Description                          |
 | ------------- | ------------------------------------ |
 | `bun run dev` | Start local development server       |
-| `bun test`    | Run Vitest suite                     |
+| `bun run test` | Run Vitest suite                     |
 | `bun run ui`  | Open Vitest UI                       |
 | `bun run deploy` | Deploy to Cloudflare Workers     |
 
