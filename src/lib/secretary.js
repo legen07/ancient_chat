@@ -256,6 +256,15 @@ async function intake(env, message) {
     }
   }
 
+  // The secretary only listens to messages RECEIVED from customers. Telegram
+  // also delivers the boss's own outgoing messages in these chats (that is
+  // the "sent message" the webhook receives) — they carry the owner's user id
+  // in `from`, so we recognise and drop them before any AI/reply (spec §4).
+  if (live && live.ownerUserId && from.id && Number(from.id) === Number(live.ownerUserId)) {
+    console.log("ignoring message the owner himself sent in chat " + chat.id);
+    return { action: "silence", reason: "owner-sent" };
+  }
+
   if (live && live.enabled === false) {
     return { action: "silence", reason: "connection-disabled" };
   }

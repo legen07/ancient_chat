@@ -128,6 +128,9 @@ export async function saveConnection(env, connection) {
   const rights = connection.rights || {};
   const snapshot = {
     id: connection.id || "",
+    // The account owner's user id — the secretary must be able to tell a
+    // message the boss himself sent from one a customer sent (spec §4).
+    ownerUserId: connection.user && connection.user.id ? Number(connection.user.id) : 0,
     userChatId: connection.user_chat_id || 0,
     enabled: connection.is_enabled !== false,
     canReply: rights.can_reply === true,

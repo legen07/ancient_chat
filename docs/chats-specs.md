@@ -75,7 +75,8 @@ A `business_message` starts a reply only if **all** gates pass, in order:
    `isDuplicate(key)` / `markSeen(key)` so it can be swapped for KV later (§10).
 3. **Chat type** — must be `private` (business messages always are; double-check anyway).
 4. **Blacklist** — skip if the chat id or `@username` is in `BLACKLIST_CHATS` → `silence`.
-5. **Sender rules** (§4).
+5. **Sender rules** (§4) — including the owner filter: a message the boss himself sent
+   (`from.id` == `BusinessConnection.user.id`) is silenced before anything else.
 6. **Cooldown** — per-chat minimum gap between AI replies (`REPLY_COOLDOWN_MS`, 1.5 s);
    within the gap → canned "give me small time ⏳" (private chat only, it always is).
 7. **Content guard** — `text`, else `caption`; empty/whitespace after trim → `silence`;
@@ -87,6 +88,7 @@ A `business_message` starts a reply only if **all** gates pass, in order:
 
 | Sender | Condition | Action |
 |---|---|---|
+| **Owner (the boss)** | `from.id` equals the owner's own user id (`BusinessConnection.user.id`, stored with the connection snapshot) | **Silence.** Telegram delivers the boss's own outgoing messages in these chats as `business_message` too — the secretary listens only to messages *received* from customers and drops the boss's own messages before any AI/reply. |
 | Human | normal user | Continue to reply flow (§5–§6). |
 | Bot | `from.is_bot === true` **and** `from.username` (or id) ∈ `WHITELISTED_BOTS` | **Treat as a general question** → AI answer as owner. No welcome flow, no personal-question deflection, no sign-off debate (bots don't need the customer-care act). |
 | Bot | `from.is_bot === true`, not whitelisted | **Silence.** (Loop prevention; real bot-to-bot syntaxes come later.) |
@@ -287,6 +289,7 @@ welcome flow marks `saved`. Blacklist is env-only (never stored).
     `rights.can_reply` is false → no send attempted, owner DM'd once.
 11. AI verdict parse failure → treated as PERSONAL (canned deflection, no AI answer).
 12. Memory keeps ≤ 6 entries (≤ 3 per role) after 10 exchanges.
+13. A `business_message` the **owner themselves sent** (`from.id` == `BusinessConnection.user.id`) → `silence`, no AI call, no send, no owner DM — the secretary only listens to customer messages.
 
 ---
 

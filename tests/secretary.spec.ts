@@ -421,6 +421,28 @@ describe("secretary intake", () => {
     expect(calls.filter((c) => c.method === "sendMessage")).toHaveLength(0);
   });
 
+  it("silences messages the owner himself sends — the secretary only listens to customers", async () => {
+    stubTelegram();
+    const env = { API_KEY: "t", OWNER_NAME: "Kwame", BOT_NAME: "Noti", AI: globalThis.AI };
+
+    await runWorker(CONN, env);
+    // The boss himself types in one of his own customer chats. Telegram delivers
+    // that outgoing message as a business_message too, but the secretary must
+    // never reply to its own boss — only to messages received from customers.
+    await runWorker(
+      businessMessage({
+        from: { id: OWNER_DM, is_bot: false, first_name: "Kwame" },
+        text: "Did you reply to Ama yet?",
+      }),
+      env,
+    );
+
+    // No reply, no typing action, no owner DM — the message is just dropped.
+    expect(sentRich()).toHaveLength(0);
+    expect(sentPlain()).toHaveLength(0);
+    expect(calls.filter((c) => c.method === "sendChatAction")).toHaveLength(0);
+  });
+
   it("ignores non-whitelisted bot senders and answers whitelisted ones plainly", async () => {
     stubTelegram({ aiTokens: ["VERDICT: PERSONAL", "\nsecret"] });
     const env = {
