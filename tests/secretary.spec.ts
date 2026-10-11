@@ -312,7 +312,9 @@ describe("secretary intake", () => {
     const secondPrompt = aiCall[1][1].prompt as string;
     expect(secondPrompt).toContain("How much be logo design?"); // their last text
     expect(secondPrompt).toContain("Yes, we dey do that too."); // our last reply
-    expect(secondPrompt).toContain("Recent messages in this chat:"); // memory block
+    expect(secondPrompt).toContain("CONVERSATION CONTEXT"); // memory block
+    expect(secondPrompt).toContain("ACTIVE MESSAGE (the one to answer now)"); // current msg
+    expect(secondPrompt).toContain("And delivery time?"); // the triggering message
   });
 
   it("answers a pre-saved contact with a PERSONAL verdict: deflection + owner DM", async () => {
@@ -683,6 +685,51 @@ describe("direct mode (owner ↔ bot)", () => {
     const final = calls.find((c) => c.method === "sendRichMessage");
     expect(final!.body.business_connection_id).toBeUndefined();
     expect(final!.body.rich_message.markdown).toContain("Hello boss 👊");
+  });
+
+  it("reads the previous direct-chat transcript into the prompt on the next message", async () => {
+    // Regression: the direct owner↔bot chat never read its own history, so
+    // every reply started from scratch. It must read the last messages,
+    // annotated as conversation context, on every request.
+    stubTelegram({ aiTokens: ["Sure, the logo is ready."] });
+    const env = { API_KEY: "t", OWNER_NAME: "Kwame", BOT_NAME: "Noti", AI: globalThis.AI };
+
+    await runWorker(
+      {
+        update_id: 20,
+        message: {
+          message_id: 50,
+          date: 1700000000,
+          chat: { id: OWNER_DM, type: "private" },
+          from: { id: OWNER_DM, is_bot: false, first_name: "Kwame" },
+          text: "Is the logo ready?",
+        },
+      },
+      env,
+    );
+
+    await runWorker(
+      {
+        update_id: 21,
+        message: {
+          message_id: 51,
+          date: 1700000001,
+          chat: { id: OWNER_DM, type: "private" },
+          from: { id: OWNER_DM, is_bot: false, first_name: "Kwame" },
+          text: "What did you say?",
+        },
+      },
+      env,
+    );
+
+    const aiCalls = (globalThis.AI.run as ReturnType<typeof vi.fn>).mock.calls;
+    expect(aiCalls).toHaveLength(2);
+    const secondPrompt = aiCalls[1][1].prompt as string;
+    expect(secondPrompt).toContain("CONVERSATION CONTEXT");
+    expect(secondPrompt).toContain("Is the logo ready?"); // the owner's earlier text
+    expect(secondPrompt).toContain("Sure, the logo is ready."); // the bot's earlier reply
+    expect(secondPrompt).toContain("ACTIVE MESSAGE (the one to answer now)");
+    expect(secondPrompt).toContain("What did you say?"); // the triggering message
   });
 });
 

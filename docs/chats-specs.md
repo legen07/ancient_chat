@@ -128,6 +128,14 @@ The owner's own chat keeps the **existing streaming pipeline**: Thinking draft �
 `sendRichMessageDraft` refreshes → final `sendRichMessage`, Stop button supported. No
 buttons, no sign-off, no personal/general split — the boss is the boss. Commands:
 
+**Conversation memory (§10).** The direct chat reads its own last-6 transcript from memory
+on **every** request and injects it into the prompt as `CONVERSATION CONTEXT`, with the
+triggering message kept apart as `ACTIVE MESSAGE` (§9). Both sides of an exchange are
+persisted after a reply is delivered, so the bot actually remembers the owner's own
+chats. This is the same `chat:<chat_id>` record as the secretary store — the owner's DM is
+just another chat. `deleted_business_messages` does not reach the direct chat, so its
+transcript is only cleared by a future reset.
+
 | Command | Behaviour |
 |---|---|
 | `/start` | Owner greeting. If the arg matches `bizChat<id>` (Manage Bot deep link), store that id as the owner-DM fallback. |
@@ -205,9 +213,14 @@ stripped plain text (customers never see raw `**markers**`); 429 → read
    or `VERDICT: PERSONAL`, then the answer (GENERAL only). Personal = needs the owner's
    own knowledge/decision or is sensitive (money, complaints, relationships, "is the boss
    around?"). Answerable from the transcript → GENERAL.
-4. **Memory transcript** — last 6 messages labelled `them:` / `you (boss's reply):` (§10).
-5. **Customer facts** — name, `language_code`, saved/first-time flag, today's date, the
-   message text.
+4. **Memory transcript** — last 6 messages (§10) under a `CONVERSATION CONTEXT` block,
+   labelled `them:` / `you (boss's reply):` in secretary mode and `you:` / `me:` in direct
+   mode. These are *past* messages — read them to understand what is going on, never quote
+   or repeat them word for word in the reply.
+5. **Customer facts** — name, `language_code`, saved/first-time flag, today's date.
+6. **The message to answer** — under an `ACTIVE MESSAGE (the one to answer now)` block,
+   separated from the context so the model never confuses a quoted earlier message with
+   the current question.
 
 The verdict line is parsed server-side; on parse failure default to **PERSONAL** (safe:
 never blunders as the owner). Canned texts live in `src/lib/canned.js`, English + light
@@ -285,6 +298,9 @@ welcome flow marks `saved`. Blacklist is env-only (never stored).
 8. `callback_query` with `h:...` → owner DM sent; chat untouched.
 9. Direct-chat `message` → streaming pipeline (drafts + Stop) still works; `/stop`
    cancels.
+9b. Second direct-chat message → the prompt carries the first exchange under a
+    `CONVERSATION CONTEXT` block (old messages) and the new message under `ACTIVE MESSAGE`,
+    and both sides are persisted so the third message can read them too.
 10. `business_connection` update → connection stored; sends use its id; when
     `rights.can_reply` is false → no send attempted, owner DM'd once.
 11. AI verdict parse failure → treated as PERSONAL (canned deflection, no AI answer).

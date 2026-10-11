@@ -45,12 +45,26 @@ export function buildPrompt({
 }) {
   const persona =
     "System: You are " + botName + ", the personal Telegram assistant of " + ownerName + ". " +
-    "You speak inside " + ownerName + "'s own chats with his customers. " +
+    (mode === "direct"
+      ? ""
+      : "You speak inside " + ownerName + "'s own chats with his customers. ") +
     "Be friendly, warm and human — like a young Ghanaian guy: natural Ghanaian English " +
     "with light pidgin where it fits naturally (e.g. \"no wahala\", \"I go check\", \"soon come\"). " +
     "Mirror the customer's language: if they write pure English, stay English; French stays French; " +
     "Twi/pidgin is welcome. Use Markdown when it helps (lists, **bold**, `code`). " +
     "Add a friendly emoji only when it fits.";
+
+  // Output shape (spec §9): ONE message, ONE voice. A 1B model shown a
+  // labelled transcript happily continues it as a two-hand "Boss: / You:"
+  // script — and that script then gets stored as memory, so the next reply
+  // doubles down. Say it plainly: speak only as yourself, no speaker labels.
+  const format =
+    "Format: reply as a single message spoken only by you. " +
+    "NEVER write a two-sided script or dialogue, and never label lines with " +
+    "\"Boss:\", \"You:\", \"Me:\", \"Customer:\" or any name followed by a colon — " +
+    "you do not speak for " + ownerName + " or the customer, only for yourself. " +
+    "Ignore any speaker labels you see in the CONVERSATION CONTEXT above; " +
+    "they are just how earlier messages were logged, not a script to continue.";
 
   const boundaries =
     "Rules: Never invent prices, promises, bookings, dates or commitments " + ownerName +
@@ -58,11 +72,29 @@ export function buildPrompt({
     "knowledge or decision (money, complaints, personal requests, \"is he around?\"), " +
     "it is PERSONAL.";
 
+  const transcriptLabel = (entry) =>
+    mode === "direct"
+      ? (entry.role === "them" ? "you: " : "me: ")
+      : (entry.role === "them" ? "them: " : "you (boss's reply): ");
+
+  // Earlier messages in the chat, deliberately separated from the message
+  // being answered now. The model must treat them as *context* — something
+  // to understand what is going on — never as the current question. That one
+  // is labelled ACTIVE MESSAGE below. Past assistant replies are re-sanitised
+  // on the way out: replies stored before the no-script rule existed may
+  // contain hallucinated "Boss:/You:" scripts that the model would imitate.
   const transcript =
     memory && memory.length
-      ? "Recent messages in this chat:\n" +
+      ? "\n\nCONVERSATION CONTEXT (earlier messages in this chat — read these to " +
+        "understand what is going on; do not repeat them word for word):\n" +
         memory
-          .map((entry) => (entry.role === "them" ? "them: " : "you (boss's reply): ") + entry.text)
+          .map((entry) =>
+            "- " +
+            transcriptLabel(entry) +
+            (entry.role === "them"
+              ? entry.text
+              : stripSpeakerLabels(entry.text, { botName, ownerName }))
+          )
           .join("\n")
       : "";
 
@@ -73,14 +105,15 @@ export function buildPrompt({
     "known_contact: " + (saved ? "yes" : "no (first time)") + "\n" +
     "today: " + new Date().toISOString().slice(0, 10);
 
-  const message = "\n\nMessage:\n" + text;
+  const message = "\n\nACTIVE MESSAGE (the one to answer now):\n" + text;
 
   if (mode === "direct") {
     return (
       persona +
+      "\n" + format +
       "\nYou are talking to " + ownerName + " himself right now — answer him directly " +
       "and helpfully, no assistant theatrics." +
-      (transcript ? "\n\n" + transcript : "") +
+      transcript +
       message
     );
   }
@@ -100,7 +133,7 @@ export function buildPrompt({
           "above, or common knowledge. PERSONAL = needs " + ownerName + " himself.";
 
   return (
-    persona + "\n" + boundaries + "\n" + contract + (transcript ? "\n\n" + transcript : "") + facts + message
+    persona + "\n" + format + "\n" + boundaries + "\n" + contract + transcript + facts + message
   );
 }
 
@@ -122,15 +155,82 @@ export function parseVerdict(raw) {
 }
 
 /**
+ * Remove hallucinated dialogue scripts from a model reply.
+ *
+ * The 1B model sometimes answers with a two-hand script ("Boss: … / You: …"),
+ * inventing lines the owner never sent. The bot must speak with ONE voice:
+ * turns attributed to anyone else are dropped, and speaker labels are stripped.
+ * A reply without such labels is returned unchanged.
+ */
+export function stripSpeakerLabels(text, { botName = DEFAULT_BOT_NAME, ownerName = DEFAULT_OWNER_NAME } = {}) {
+  const raw = String(text || "");
+  if (!raw.trim()) return raw;
+
+  const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const names = (list) =>
+    list.filter((n) => n && String(n).trim()).map((n) => escapeRegex(String(n).trim())).join("|");
+
+  // "You"/"Me"/the bot's name = the assistant's own turns; "Boss"/the owner's
+  // name/customer words = lines the model fabricated for other people.
+  const assistantRe = new RegExp("^\\s*(" + names(["you", "me", botName]) + ")\\s*:\\s*", "i");
+  const otherRe = new RegExp(
+    "^\\s*(" + names(["boss", "owner", "customer", "client", "user", "them", ownerName]) + ")\\s*:\\s*",
+    "i",
+  );
+  const anyLabelRe = new RegExp(
+    "^\\s*(" + names(["you", "me", botName, "boss", "owner", "customer", "client", "user", "them", ownerName]) + ")\\s*:\\s*",
+    "i",
+  );
+
+  const lines = raw.split("\n");
+  const turns = [];
+  let current = { who: "preamble", lines: [] };
+
+  for (const line of lines) {
+    if (anyLabelRe.test(line)) {
+      if (current.lines.join("").trim() || current.who !== "preamble") turns.push(current);
+      current = {
+        who: assistantRe.test(line) ? "assistant" : "other",
+        lines: [line.replace(anyLabelRe, "")],
+      };
+    } else {
+      current.lines.push(line);
+    }
+  }
+  turns.push(current);
+
+  const labelled = turns.filter((t) => t.who !== "preamble");
+
+  // Not a script (≤1 labelled line): just drop that one label.
+  if (labelled.length < 2) {
+    return lines.map((l) => l.replace(anyLabelRe, "")).join("\n").replace(/\n{3,}/g, "\n\n").trim() || raw.trim();
+  }
+
+  // A script: keep only the assistant's own turns. If none were labelled as
+  // the assistant, keep everything (labels stripped) rather than swallow the reply.
+  const kept = turns.filter((t) => t.who === "assistant");
+  const body = (kept.length ? kept : turns)
+    .map((t) => t.lines.join("\n"))
+    .join("\n\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return body || raw.trim();
+}
+
+/**
  * Run a completion to the end and return the full text (secretary mode has
- * no streaming drafts — see spec §0).
+ * no streaming drafts — see spec §0). Speaker labels/scripts are stripped
+ * before the text reaches the caller.
  */
 export async function collectCompletion(env, prompt, parameters = {}, options = {}) {
   let full = "";
   for await (const token of streamCompletion(env, prompt, parameters, options)) {
     full += token;
   }
-  return full;
+  return stripSpeakerLabels(full, {
+    botName: (env && env.BOT_NAME) || DEFAULT_BOT_NAME,
+    ownerName: (env && env.OWNER_NAME) || DEFAULT_OWNER_NAME,
+  });
 }
 
 /**

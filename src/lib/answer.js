@@ -12,7 +12,8 @@
  * Docs: https://core.telegram.org/bots/api#streaming-replies
  */
 
-import { buildPrompt, streamCompletion, DEFAULT_BOT_NAME, DEFAULT_OWNER_NAME } from "./ai.js";
+import { buildPrompt, streamCompletion, stripSpeakerLabels, DEFAULT_BOT_NAME, DEFAULT_OWNER_NAME } from "./ai.js";
+import * as memory from "./memory.js";
 import {
   finalRichMarkdown,
   markdownToTelegramHtml,
@@ -144,6 +145,10 @@ export async function answerMessage({
 }) {
   const chatId = chat.id;
   const isPrivate = chat.type === "private";
+  // Read the chat's recent transcript on every request so the reply is
+  // grounded in the conversation so far (direct owner↔bot chat included —
+  // it had no context at all before).
+  const record = await memory.getChatRecord(env, chatId);
   const key = generationKey(chatId, draftId);
   // `aborted` mirrors `stopped` so the same object can be handed to the
   // stream reader as an AbortSignal-like cancellation flag.
@@ -183,6 +188,7 @@ export async function answerMessage({
       botName: env.BOT_NAME || DEFAULT_BOT_NAME,
       ownerName: env.OWNER_NAME || DEFAULT_OWNER_NAME,
       customer: from,
+      memory: record.history,
       text,
     });
     let full = "";
@@ -226,6 +232,13 @@ export async function answerMessage({
       return { ok: false, text: full };
     }
 
+    // The streamed draft may contain a hallucinated "Boss:/You:" script; the
+    // final message (and the memory it feeds) must be one-voice only.
+    full = stripSpeakerLabels(full, {
+      botName: env.BOT_NAME || DEFAULT_BOT_NAME,
+      ownerName: env.OWNER_NAME || DEFAULT_OWNER_NAME,
+    });
+
     // Persist the finished reply; the ephemeral draft disappears by itself.
     const richMessage = finalRichMarkdown(full);
     const sent = await sendRichMessage(env, {
@@ -260,6 +273,15 @@ export async function answerMessage({
           ...(threadId ? { message_thread_id: threadId } : {}),
         });
       }
+    }
+
+    // Persist both sides of the exchange so the next message can read it.
+    // Best-effort: a storage hiccup must not break the reply that already went out.
+    try {
+      await memory.appendHistory(env, chatId, "them", text);
+      await memory.appendHistory(env, chatId, "us", full);
+    } catch (err) {
+      console.log("direct-chat memory persist failed: " + (err && err.message));
     }
 
     return { ok: true, text: full };
