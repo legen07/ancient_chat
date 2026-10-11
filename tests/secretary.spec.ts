@@ -25,11 +25,18 @@ interface StubOptions {
   aiTokens?: string[];
   /** Simulate a business account that cannot send rich messages. */
   richFails?: boolean;
+  /** Simulate an account where even the HTML retry (parse_mode: HTML) fails. */
+  htmlFails?: boolean;
   /** BusinessConnection object returned by getBusinessConnection. */
   connection?: Record<string, unknown> | null;
 }
 
-function stubTelegram({ aiTokens = ["ok"], richFails = false, connection = null }: StubOptions = {}) {
+function stubTelegram({
+  aiTokens = ["ok"],
+  richFails = false,
+  htmlFails = false,
+  connection = null,
+}: StubOptions = {}) {
   calls.length = 0;
 
   globalThis.fetch = vi.fn(async (input: Request | string, init?: RequestInit) => {
@@ -69,7 +76,16 @@ function stubTelegram({ aiTokens = ["ok"], richFails = false, connection = null 
     }
 
     // Plain sendMessage also returns a real message id (buttons need it).
+    // The HTML retry (parse_mode: "HTML") is rejected when htmlFails is set,
+    // so the pipeline drops to the stripped-plain last resort.
     if (method2 === "sendMessage") {
+      if (htmlFails && body.parse_mode === "HTML") {
+        return jsonResponse({
+          ok: false,
+          error_code: 400,
+          description: "Bad Request: can't parse entities",
+        });
+      }
       return jsonResponse({ ok: true, result: { message_id: 112 } });
     }
 
@@ -173,30 +189,75 @@ describe("secretary intake", () => {
     );
   });
 
-  it("still attaches the action buttons when the account cannot send rich messages", async () => {
-    // Regression: RICH_MESSAGE_UNSUPPORTED → plain-text fallback used to return
-    // early, dropping the Delete / Request Human buttons entirely.
-    stubTelegram({ aiTokens: ["We dey do logo design from GH₵ 300 🙌"], richFails: true });
+  it("retries with HTML formatting (and keeps the buttons) when rich messages are rejected", async () => {
+    // Regression: RICH_MESSAGE_UNSUPPORTED (old client on the account side)
+    // used to drop straight to raw plain text, showing **markers** verbatim.
+    // The reply must retry with parse_mode: "HTML" so it still renders.
+    stubTelegram({ aiTokens: ["We dey do **logo** design from GH₵ 300 🙌"], richFails: true });
     const env = { API_KEY: "t", OWNER_NAME: "Kwame", BOT_NAME: "Noti", AI: globalThis.AI };
 
     await runWorker(CONN, env);
     await runWorker(businessMessage(), env);
 
-    // Rich failed → the plain fallback carried the reply…
+    // Rich failed → the HTML retry carried the reply…
     expect(sentRich()).toHaveLength(1);
     const plain = sentPlain();
     expect(plain).toHaveLength(1);
     expect(plain[0].body.business_connection_id).toBe("BC1");
-    expect(plain[0].body.text).toContain("We dey do logo design");
-    expect(plain[0].body.text).toContain("on behalf of Kwame");
+    expect(plain[0].body.parse_mode).toBe("HTML");
+    expect(plain[0].body.text).toContain("<b>logo</b>"); // still formatted
+    expect(plain[0].body.text).toContain("<i>Noti 🤖, on behalf of Kwame</i>"); // sign-off italic
+    expect(plain[0].body.text).not.toContain("**"); // no raw markers
 
-    // …and the buttons still ride on a follow-up edit of that plain message
-    // (id 112 — the plain send's id, not the rejected rich message's).
+    // …and the buttons still ride on a follow-up edit of that message
+    // (id 112 — the HTML send's id, not the rejected rich message's).
     const edits = sentEdits();
     expect(edits).toHaveLength(1);
     expect(edits[0].body.business_connection_id).toBe("BC1");
     expect(edits[0].body.message_id).toBe(112);
     expect(edits[0].body.reply_markup.inline_keyboard[0][0].callback_data).toBe("d:9001:112");
+  });
+
+  it("sends stripped plain text (no raw markers) when rich AND HTML are rejected", async () => {
+    stubTelegram({
+      aiTokens: ["VERDICT: GENERAL", "\nWe **dey** do `logo` design 🙌"],
+      richFails: true,
+      htmlFails: true,
+    });
+    const env = {
+      API_KEY: "t",
+      OWNER_NAME: "Kwame",
+      BOT_NAME: "Noti",
+      CONTACTS: "9008",
+      AI: globalThis.AI,
+    };
+
+    await runWorker(CONN, env);
+    await runWorker(
+      businessMessage({
+        chat: { id: 9008, type: "private", first_name: "Ama" },
+        from: { id: 9008, is_bot: false, first_name: "Ama" },
+        text: "Do you do logo design?",
+      }),
+      env,
+    );
+
+    // Two sendMessage attempts: the rejected HTML retry, then the plain one.
+    const plain = sentPlain();
+    expect(plain).toHaveLength(2);
+    expect(plain[0].body.parse_mode).toBe("HTML");
+
+    const last = plain[plain.length - 1].body;
+    expect(last.parse_mode).toBeUndefined();
+    expect(last.text).toContain("We dey do logo design 🙌"); // markers stripped
+    expect(last.text).not.toContain("**");
+    expect(last.text).not.toContain("`");
+    expect(last.text).toContain("on behalf of Kwame"); // sign-off survives
+
+    // Buttons attach to the plain message that actually landed.
+    const edits = sentEdits();
+    expect(edits).toHaveLength(1);
+    expect(edits[0].body.message_id).toBe(112);
   });
 
   it("recovers a missed business_connection via getBusinessConnection (owner DM + reply)", async () => {

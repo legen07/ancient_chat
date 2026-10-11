@@ -36,11 +36,13 @@ keeps the original streaming pipeline (drafts + Stop) via Workers AI
   look like `data: {"response":"<token>"}`).
 - `src/lib/answer.js` — the streaming pipeline and its throttling/fallbacks
   (`answerMessage`, `stopGeneration`, `stopChatGeneration`), plus one-shot
-  `sendBusinessReply` (rich → plain fallback → buttons via
-  `editMessageReplyMarkup`) and `actionKeyboard`.
+  `sendBusinessReply` (rich → HTML retry → stripped-plain fallback → buttons
+  via `editMessageReplyMarkup`) and `actionKeyboard`.
 - `src/lib/rich.js` — sanitises model Markdown into Telegram Rich Markdown
   (GFM): closes unterminated ``` fences, strips unclosed inline markers,
-  enforces the 32768-char limit, provides a plain-text fallback.
+  enforces the 32768-char limit; plus the fallback converters
+  `markdownToTelegramHtml` (Markdown → Telegram `parse_mode: "HTML"`) and
+  `stripMarkdown` (marker-stripped plain text) and `plainText`.
 - `src/lib/telegram.js` — thin Bot API helpers (`callTelegram` with one
   429-retry, `sendRichMessageDraft`, `sendMessageDraft`, `sendRichMessage`,
   `sendMessage`, `sendChatAction`, `answerCallbackQuery`,
@@ -76,8 +78,12 @@ keeps the original streaming pipeline (drafts + Stop) via Workers AI
   draft, or an empty-text `sendMessageDraft` as fallback.
 - Draft refreshes are throttled (~800 ms, see `DRAFT_INTERVAL_MS`); passing
   `draftIntervalMs: 0` exists for tests only.
-- Every rich send has a plain-text fallback (no `parse_mode`): if Telegram
-  rejects the Markdown, the reply must still arrive verbatim.
+- Every rich send falls back through three steps: `sendRichMessage` →
+  `sendMessage` with `parse_mode: "HTML"` (Markdown converted by
+  `markdownToTelegramHtml`, so formatting survives when the account cannot
+  send rich messages) → marker-stripped plain text (no `parse_mode`). Never
+  send raw Markdown verbatim as the fallback — customers must never see
+  literal `**markers**`.
 - `stopped_message_generation` updates cancel in-flight generations via an
   in-memory registry — best-effort only, since the update arrives on a
   different request that may hit another Worker isolate.

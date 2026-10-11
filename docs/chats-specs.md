@@ -21,7 +21,7 @@ Source: https://core.telegram.org/bots/api and https://core.telegram.org/bots/fe
 | `rights.can_reply` covers **private chats with an incoming message in the last 24 h**. | We only ever reply right after an incoming message → always inside the window (§6). |
 | `sendMessage`, `sendRichMessage`, `sendChatAction`, `deleteBusinessMessages` accept `business_connection_id`. | These are the only tools for speaking/deleting in customer chats. |
 | **`sendRichMessageDraft` / `sendMessageDraft` have NO `business_connection_id`** → streaming drafts are impossible on behalf of a business account. | Secretary replies are **one-shot rich messages**; the streaming pipeline survives only in the direct owner↔bot chat (§5). |
-| `sendRichMessage` with `business_connection_id` requires "the corresponding user can send rich messages"; falls back to plain `sendMessage` on failure. | Mandatory plain-text fallback (§8). |
+| `sendRichMessage` with `business_connection_id` requires "the corresponding user can send rich messages"; when rejected, retry `sendMessage(parse_mode: "HTML")`, then stripped plain text. | Two-step formatted fallback (§8) — never show raw Markdown. |
 | `sendRichMessage` accepts `reply_markup` (InlineKeyboardMarkup) and `reply_parameters`. | Buttons + quoting in customer chats (§7, §8). |
 | `CallbackQuery` = `{ id, from, message, inline_message_id, chat_instance, data, game_short_name }` — **no `business_connection_id`**. Must call `answerCallbackQuery` (clients show a progress bar until you do). | Button presses must resolve the connection from stored memory; always ack (§7). |
 | `deleteBusinessMessages(business_connection_id, message_ids)` requires `can_delete_sent_messages` (bot's own messages) or `can_delete_all_messages`. | The Delete button depends on the owner granting that right (§7). |
@@ -177,13 +177,14 @@ Rules:
 
 | Kind | Where | Mechanics |
 |---|---|---|
-| `business-rich` | Secretary chats | `sendChatAction(typing)` best-effort → collect full AI text → `sendRichMessage{business_connection_id, rich_message, reply_parameters, reply_markup}`. On failure: `sendMessage` plain text (≤4096) with the same business id; if that also fails, log + DM owner once. |
+| `business-rich` | Secretary chats | `sendChatAction(typing)` best-effort → collect full AI text → `sendRichMessage{business_connection_id, rich_message, reply_parameters, reply_markup}`. On failure: retry `sendMessage` with `parse_mode: "HTML"` (Markdown → Telegram HTML via `markdownToTelegramHtml`, ≤4096) so formatting survives; if that also fails: `sendMessage` marker-stripped plain text (no parse mode); if that fails too, log + DM owner once. |
 | `streaming-rich` | Direct owner chat | Existing pipeline unchanged (drafts, Stop, throttling, fallbacks). |
 | `canned` | Both | `sendMessage`, no parse mode, verbatim-safe; business id attached in secretary chats. |
 | `silence` | Both | Ack + log reason only. |
 
 Cross-cutting: fast ack (`waitUntil`); Rich Markdown sanitising and limits via `rich.js`
-(fences closed, ≤ 30000 chars); every rich send has a plain fallback; 429 → read
+(fences closed, ≤ 30000 chars); every rich send falls back rich → HTML parse mode →
+stripped plain text (customers never see raw `**markers**`); 429 → read
 `retry_after`, retry once; log decision + ≤ 120-char text preview, never full bodies.
 
 ---

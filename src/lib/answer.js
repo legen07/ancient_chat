@@ -13,7 +13,13 @@
  */
 
 import { buildPrompt, streamCompletion, DEFAULT_BOT_NAME, DEFAULT_OWNER_NAME } from "./ai.js";
-import { finalRichMarkdown, partialRichMarkdown, plainText } from "./rich.js";
+import {
+  finalRichMarkdown,
+  markdownToTelegramHtml,
+  partialRichMarkdown,
+  plainText,
+  stripMarkdown,
+} from "./rich.js";
 import {
   editMessageReplyMarkup,
   sendMessage,
@@ -81,14 +87,15 @@ export function actionKeyboard(chatId, messageId) {
   };
 }
 
-/** Refresh the live preview; falls back to a plain-text draft on parse errors. */
+/** Refresh the live preview; falls back to a formatted plain draft, then verbatim. */
 async function pushDraft(env, chatId, draftId, threadId, text) {
   const params = { chat_id: chatId, draft_id: draftId, can_stop: true };
   if (threadId) params.message_thread_id = threadId;
 
+  const richMessage = partialRichMarkdown(text);
   const rich = await sendRichMessageDraft(env, {
     ...params,
-    rich_message: partialRichMarkdown(text),
+    rich_message: richMessage,
   });
 
   if (rich && rich.ok) return;
@@ -98,9 +105,20 @@ async function pushDraft(env, chatId, draftId, threadId, text) {
       " — falling back to a plain draft",
   );
 
-  // A plain draft (no parse mode) always renders: partial Markdown that
-  // Telegram cannot parse yet simply shows up as literal characters.
-  await sendMessageDraft(env, { ...params, text: plainText(text) });
+  // Drafts are private-chat previews: retry with the classic HTML parse mode
+  // (sendMessageDraft supports parse_mode) so the preview keeps its bold /
+  // code / links even when Rich Messages are unavailable on this client.
+  const formatted = await sendMessageDraft(env, {
+    ...params,
+    text: markdownToTelegramHtml(richMessage.markdown),
+    parse_mode: "HTML",
+  });
+
+  if (formatted && formatted.ok) return;
+
+  // Last resort: verbatim text (no parse mode) — partial Markdown that
+  // Telegram cannot parse simply shows up as literal characters.
+  await sendMessageDraft(env, { ...params, text: plainText(stripMarkdown(richMessage.markdown)) });
 }
 
 /**
@@ -209,22 +227,39 @@ export async function answerMessage({
     }
 
     // Persist the finished reply; the ephemeral draft disappears by itself.
+    const richMessage = finalRichMarkdown(full);
     const sent = await sendRichMessage(env, {
       chat_id: chatId,
-      rich_message: finalRichMarkdown(full),
+      rich_message: richMessage,
       ...(threadId ? { message_thread_id: threadId } : {}),
     });
 
     if (!sent || !sent.ok) {
       console.log(
         "sendRichMessage failed: " + ((sent && sent.description) || "no response") +
-          " — falling back to plain text",
+          " — falling back to a formatted message",
       );
-      await sendMessage(env, {
+
+      // Retry with the classic HTML parse mode: bold/italic/code/links keep
+      // rendering on every client, even where Rich Messages are unsupported.
+      const formatted = await sendMessage(env, {
         chat_id: chatId,
-        text: plainText(full),
+        text: markdownToTelegramHtml(richMessage.markdown),
+        parse_mode: "HTML",
         ...(threadId ? { message_thread_id: threadId } : {}),
       });
+
+      if (!formatted || !formatted.ok) {
+        console.log(
+          "HTML sendMessage failed: " + ((formatted && formatted.description) || "no response") +
+            " — falling back to plain text",
+        );
+        await sendMessage(env, {
+          chat_id: chatId,
+          text: plainText(stripMarkdown(richMessage.markdown)),
+          ...(threadId ? { message_thread_id: threadId } : {}),
+        });
+      }
     }
 
     return { ok: true, text: full };
@@ -260,14 +295,16 @@ export async function sendBusinessReply({
   withButtons = true,
 }) {
   const body = (text || "") + signOffLine;
+  const richMessage = finalRichMarkdown(body);
+  const replyTo = replyToMessageId
+    ? { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } }
+    : {};
 
   const sent = await sendRichMessage(env, {
     business_connection_id: businessConnectionId,
     chat_id: chatId,
-    rich_message: finalRichMarkdown(body),
-    ...(replyToMessageId
-      ? { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } }
-      : {}),
+    rich_message: richMessage,
+    ...replyTo,
   });
 
   let messageId = sent && sent.ok && sent.result ? sent.result.message_id : 0;
@@ -275,15 +312,37 @@ export async function sendBusinessReply({
   if (!sent || !sent.ok) {
     console.log(
       "business sendRichMessage failed: " + ((sent && sent.description) || "no response") +
+        " — falling back to a formatted message",
+    );
+
+    // Rich Messages need a recent client on the account side (Bot API 10.1+);
+    // when Telegram rejects them, retry with the classic HTML parse mode so
+    // the reply still renders bold/italic/code instead of raw **markers**.
+    const formatted = await sendMessage(env, {
+      business_connection_id: businessConnectionId,
+      chat_id: chatId,
+      text: markdownToTelegramHtml(richMessage.markdown),
+      parse_mode: "HTML",
+      ...replyTo,
+    });
+
+    if (formatted && formatted.ok) {
+      messageId = formatted.result ? formatted.result.message_id : 0;
+      await attachActionButtons({ env, businessConnectionId, chatId, messageId, withButtons });
+      return { ok: true, messageId };
+    }
+
+    console.log(
+      "business HTML sendMessage failed: " +
+        ((formatted && formatted.description) || "no response") +
         " — falling back to plain text",
     );
+
     const fallback = await sendMessage(env, {
       business_connection_id: businessConnectionId,
       chat_id: chatId,
-      text: plainText(body),
-      ...(replyToMessageId
-        ? { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } }
-        : {}),
+      text: plainText(stripMarkdown(richMessage.markdown)),
+      ...replyTo,
     });
 
     if (!fallback || !fallback.ok) {

@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replies now stream from `@cf/meta/llama-3.2-1b-instruct` (SSE) instead of a blocking 3B call
 - The webhook acknowledges Telegram immediately and answers in `ctx.waitUntil`
+- Reply fallback chain is now three-step: Rich Message → `sendMessage` with
+  `parse_mode: "HTML"` (Markdown converted to Telegram HTML, so bold/italic/code/links
+  keep rendering) → marker-stripped plain text. Previously a rejected rich send dropped
+  straight to raw text, showing literal `**markers**` in the chat
 
 ## [0.1.0] - 2026-09-09
 

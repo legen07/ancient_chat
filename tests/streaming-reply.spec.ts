@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index.js";
 import { answerMessage, stopGeneration } from "../src/lib/answer.js";
 import { streamTokens } from "../src/lib/ai.js";
-import { finalRichMarkdown, partialRichMarkdown, plainText } from "../src/lib/rich.js";
+import {
+  finalRichMarkdown,
+  markdownToTelegramHtml,
+  partialRichMarkdown,
+  plainText,
+  stripMarkdown,
+} from "../src/lib/rich.js";
 
 const encoder = new TextEncoder();
 
@@ -135,6 +141,51 @@ describe("Rich Markdown stabilisation", () => {
   });
 });
 
+describe("Markdown → Telegram HTML fallback", () => {
+  it("converts bold, italic, strike, spoiler and inline code", () => {
+    expect(markdownToTelegramHtml("**bold** and _it_ and ~~gone~~||hush||")).toBe(
+      "<b>bold</b> and <i>it</i> and <s>gone</s><tg-spoiler>hush</tg-spoiler>",
+    );
+    expect(markdownToTelegramHtml("run `npm i` now")).toBe("run <code>npm i</code> now");
+  });
+
+  it("converts fenced code blocks with HTML escaping", () => {
+    expect(markdownToTelegramHtml("```js\nconst a = 1 < 2 && 3 > 2;\n```")).toBe(
+      "<pre>const a = 1 &lt; 2 &amp;&amp; 3 &gt; 2;</pre>",
+    );
+  });
+
+  it("converts links and escapes free text", () => {
+    expect(markdownToTelegramHtml("see [docs](https://example.com/a?b=1&c=2) & more")).toBe(
+      'see <a href="https://example.com/a?b=1&amp;c=2">docs</a> &amp; more',
+    );
+  });
+
+  it("leaves snake_case and arithmetic untouched", () => {
+    expect(markdownToTelegramHtml("use the send_rich_message API: 5 * 3 = 15")).toBe(
+      "use the send_rich_message API: 5 * 3 = 15",
+    );
+  });
+
+  it("boldens headings and converts list bullets", () => {
+    expect(markdownToTelegramHtml("## Steps\n- first\n- second")).toBe(
+      "<b>Steps</b>\n• first\n• second",
+    );
+  });
+});
+
+describe("stripMarkdown (last-resort plain fallback)", () => {
+  it("removes markers, flattens links and keeps the words", () => {
+    expect(stripMarkdown("**bold** and `code` and [site](https://example.com)")).toBe(
+      "bold and code and site",
+    );
+  });
+
+  it("keeps plain prose untouched", () => {
+    expect(stripMarkdown("Ama, your logo dey ready 🙌")).toBe("Ama, your logo dey ready 🙌");
+  });
+});
+
 describe("webhook: streamed private-chat reply", () => {
   it("streams draft updates and persists the reply as a Rich Message", async () => {
     const calls = stubTelegram();
@@ -210,7 +261,7 @@ describe("webhook: streamed private-chat reply", () => {
     expect(drafts[3].body.rich_message.markdown).toBe("part0 part1 part2 ");
   });
 
-  it("falls back to a plain draft when Telegram rejects the partial markdown", async () => {
+  it("falls back to a formatted HTML draft when Telegram rejects the partial markdown", async () => {
     const calls = stubTelegram({
       sendRichMessageDraft: () =>
         json({
@@ -236,17 +287,17 @@ describe("webhook: streamed private-chat reply", () => {
     expect(plain[plain.length - 1].body.text).toContain("plain reply");
   });
 
-  it("falls back to plain sendMessage when the final rich message is rejected", async () => {
+  it("retries with HTML formatting when the final rich message is rejected", async () => {
     const calls = stubTelegram({
       sendRichMessage: () =>
         json({
           ok: false,
-          description: "Bad Request: can't parse entities: unclosed node",
+          description: "Bad Request: RICH_MESSAGE_UNSUPPORTED",
         }),
     });
     const env = {
       API_KEY: "123:test-token",
-      AI: { run: vi.fn(async () => sseStream(["final answer"])) },
+      AI: { run: vi.fn(async () => sseStream(["final **answer**"])) },
     };
 
     await answerMessage({
@@ -257,11 +308,49 @@ describe("webhook: streamed private-chat reply", () => {
       text: "hi",
     });
 
-    const plain = calls.find((c) => c.method === "sendMessage");
-    expect(plain?.body.chat_id).toBe(11);
-    expect(plain?.body.text).toBe("final answer");
-    // The fallback must not re-parse markdown.
-    expect(plain?.body.parse_mode).toBeUndefined();
+    // The reply must NOT degrade to raw markdown: it retries with the
+    // classic HTML parse mode so **answer** still renders bold.
+    const html = calls.find((c) => c.method === "sendMessage");
+    expect(html?.body.chat_id).toBe(11);
+    expect(html?.body.text).toBe("final <b>answer</b>");
+    expect(html?.body.parse_mode).toBe("HTML");
+  });
+
+  it("falls back to stripped plain text when rich AND HTML sends are rejected", async () => {
+    let htmlAttempt = 0;
+    const calls = stubTelegram({
+      sendRichMessage: () =>
+        json({
+          ok: false,
+          description: "Bad Request: RICH_MESSAGE_UNSUPPORTED",
+        }),
+      sendMessage: () => {
+        htmlAttempt += 1;
+        // First sendMessage is the HTML retry — reject it too.
+        return htmlAttempt === 1
+          ? json({ ok: false, description: "Bad Request: can't parse entities" })
+          : json({ ok: true, result: true });
+      },
+    });
+    const env = {
+      API_KEY: "123:test-token",
+      AI: { run: vi.fn(async () => sseStream(["final **answer**"])) },
+    };
+
+    await answerMessage({
+      env,
+      chat: { id: 12, type: "private" },
+      draftId: 5,
+      from: {},
+      text: "hi",
+    });
+
+    const plain = calls.filter((c) => c.method === "sendMessage");
+    expect(plain).toHaveLength(2);
+    const last = plain[plain.length - 1].body;
+    expect(last.text).toBe("final answer");
+    // The last-resort fallback must not re-parse markdown.
+    expect(last.parse_mode).toBeUndefined();
   });
 
   it("reports an error message when the model produced nothing", async () => {
