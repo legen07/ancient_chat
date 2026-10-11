@@ -22,7 +22,7 @@ unchanged since Bot API 7.2.
 2. Handle `business_connection` updates (established / edited / ended).
 3. Handle `business_message`, `edited_business_message`, `deleted_business_messages`.
 4. Read permissions from `rights` (`BusinessBotRights`) on the latest `BusinessConnection` —
-   `can_reply` covers private chats with an incoming message in the last **24 h**.
+   `can_reply` covers private chats with an incoming megfssage in the last **24 h**.
 5. Send as the user: pass `business_connection_id` to `sendMessage`, `sendChatAction` and
    other send methods.
 

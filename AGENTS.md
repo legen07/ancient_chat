@@ -1,37 +1,77 @@
 # Ancient Chat
 
-Telegram AI customer-support bot running on Cloudflare Workers. A Telegram
-webhook feeds each text message into Workers AI
-(`@cf/meta/llama-3.2-1b-instruct`, streamed), and the reply is streamed back
-to the user as a Telegram **Rich Message**.
+Telegram **Secretary bot** running on Cloudflare Workers. Connected to the owner's
+account (Secretary Mode / BotFather), it receives `business_message` updates for
+messages landing in the owner's private chats and replies **as the owner** — one-shot
+Rich Messages signed by the assistant (`docs/chats-specs.md` is the intake/reply
+contract; read it before touching intake logic). The owner's own chat with the bot
+keeps the original streaming pipeline (drafts + Stop) via Workers AI
+(`@cf/meta/llama-3.2-1b-instruct`).
 
 ## Module map
 
 - `src/index.js` — Worker entry: webhook settings page, webhook setup/delete
-  endpoints, and the `/api/webhook/` handler. The handler acks Telegram with
-  `ok` immediately and runs the reply in `ctx.waitUntil(...)`.
-- `src/lib/ai.js` — prompt builder + `streamCompletion`/`streamTokens`: an
-  async generator over the SSE stream returned by
-  `env.AI.run(model, { stream: true })` (frames look like
-  `data: {"response":"<token>"}`).
-- `src/lib/answer.js` — the streaming pipeline and its throttling/fallbacks.
-  Exports `answerMessage` and `stopGeneration`.
+  endpoints, and the `/api/webhook/` handler. Dispatches update kinds (spec §2):
+  business connection/message/deleted, callback queries, direct-chat messages +
+  commands (`/start`, `/help`, `/stop`), `stopped_message_generation`. Acks
+  Telegram with `ok` immediately and runs everything in `ctx.waitUntil(...)`.
+  `setWebhook` calls always pass `allowed_updates` from `ALLOWED_UPDATES`.
+- `docs/chats-specs.md` — **the spec**: which messages are listened to (dedup,
+  blacklist/whitelisted bots, sender rules), reply routing (welcome / general /
+  personal verdict), buttons, memory, env vars, acceptance criteria.
+- `src/lib/secretary.js` — secretary intake & routing: dedup LRU, env list
+  parsing (BLACKLIST_CHATS / WHITELISTED_BOTS / CONTACTS), welcome flow,
+  verdict-based general/personal routing, owner DMs, callback-button actions
+  (Delete / Request Human), `ALLOWED_UPDATES`.
+- `src/lib/memory.js` — KV-or-fallback store: per-chat records
+  (`saved`, `bizConnId`, last-6 transcript, `lastAt`), connection snapshot,
+  owner chat id. `trimHistory` enforces ≤6 entries, ≤3 per role.
+- `src/lib/canned.js` — every fixed text (welcome, deflection, toasts, owner
+  alerts, direct-chat commands) + `signOff()`; English with light Ghanaian pidgin.
+- `src/lib/ai.js` — `buildPrompt` (modes: `secretary` | `welcome` | `plain` |
+  `direct`, dynamic persona from BOT_NAME/OWNER_NAME, memory transcript),
+  `parseVerdict` (missing verdict ⇒ PERSONAL — safe default),
+  `collectCompletion`, and `streamCompletion`/`streamTokens`: an async generator
+  over the SSE stream returned by `env.AI.run(model, { stream: true })` (frames
+  look like `data: {"response":"<token>"}`).
+- `src/lib/answer.js` — the streaming pipeline and its throttling/fallbacks
+  (`answerMessage`, `stopGeneration`, `stopChatGeneration`), plus one-shot
+  `sendBusinessReply` (rich → plain fallback → buttons via
+  `editMessageReplyMarkup`) and `actionKeyboard`.
 - `src/lib/rich.js` — sanitises model Markdown into Telegram Rich Markdown
   (GFM): closes unterminated ``` fences, strips unclosed inline markers,
   enforces the 32768-char limit, provides a plain-text fallback.
-- `src/lib/telegram.js` — thin Bot API helpers (`callTelegram`,
-  `sendRichMessageDraft`, `sendMessageDraft`, `sendRichMessage`,
-  `sendMessage`, `validateWebhookUrl`).
+- `src/lib/telegram.js` — thin Bot API helpers (`callTelegram` with one
+  429-retry, `sendRichMessageDraft`, `sendMessageDraft`, `sendRichMessage`,
+  `sendMessage`, `sendChatAction`, `answerCallbackQuery`,
+  `deleteBusinessMessages`, `editMessageReplyMarkup`, `validateWebhookUrl`).
 - `src/pages/webhook-settings.js` — server-rendered settings page (plain HTML
   string; no bundler module rules involved).
 
 ## Invariants (do not break these)
 
-- Private chats stream through `sendRichMessageDraft` (ephemeral ~30s
-  preview, animated when `draft_id` is reused); the finished reply MUST be
-  persisted with `sendRichMessage`, because drafts disappear on their own.
-  Drafts are **private-chat only** — group/channel chats skip drafts and send
-  the final Rich Message once.
+- **Secretary chats have no streaming drafts**: `sendRichMessageDraft` /
+  `sendMessageDraft` do NOT accept `business_connection_id` (verified against
+  Bot API 10.3). Secretary replies are one-shot `sendRichMessage` with the
+  business id; only the direct owner↔bot chat streams through drafts.
+- Private chats (direct mode) stream through `sendRichMessageDraft`
+  (ephemeral ~30s preview, animated when `draft_id` is reused); the finished
+  reply MUST be persisted with `sendRichMessage`, because drafts disappear on
+  their own. Drafts are **private-chat only** — group/channel chats skip
+  drafts and send the final Rich Message once.
+- Every secretary reply quotes the triggering message
+  (`reply_parameters`), carries the Delete / Request Human buttons (attached
+  post-send via `editMessageReplyMarkup`, since the reply's own message id is
+  only known after sending) and ends with the assistant sign-off (TOS §5.4).
+- `callback_query` carries NO `business_connection_id` — button handlers must
+  resolve the connection from chat memory, and MUST always call
+  `answerCallbackQuery` (clients show a progress bar until answered), even for
+  malformed data.
+- AI verdict parsing defaults to PERSONAL on any parse failure: never blunder
+  a commitment as the owner.
+- Blacklist/whitelist/contact lists live in env (`BLACKLIST_CHATS`,
+  `WHITELISTED_BOTS`, `CONTACTS`); conversation memory lives in KV `MEMORY`
+  (falls back to a per-isolate Map when the binding is absent).
 - The "Thinking…" placeholder is `<tg-thinking>…</tg-thinking>` in the rich
   draft, or an empty-text `sendMessageDraft` as fallback.
 - Draft refreshes are throttled (~800 ms, see `DRAFT_INTERVAL_MS`); passing
@@ -41,8 +81,10 @@ to the user as a Telegram **Rich Message**.
 - `stopped_message_generation` updates cancel in-flight generations via an
   in-memory registry — best-effort only, since the update arrives on a
   different request that may hit another Worker isolate.
-- Bot API reference (Rich Messages, streaming replies): https://core.telegram.org/bots/api
-  and https://core.telegram.org/bots/features#streaming-replies
+- Bot API reference (Rich Messages, streaming replies, Business Bots):
+  https://core.telegram.org/bots/api,
+  https://core.telegram.org/bots/features#streaming-replies and
+  https://core.telegram.org/bots/features#business-bots
 
 ## Commands
 

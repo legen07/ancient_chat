@@ -17,4 +17,16 @@
 		"binding": "AI",
 		"remote": true
 	}
+
+	// Secretary-mode chat memory (last 6 messages per chat, saved contacts,
+	// latest business connection). Optional: without it the bot falls back to
+	// a per-isolate in-memory store (fine for dev/tests, lost on restart and
+	// not shared across isolates).
+	//
+	// To enable: `bunx wrangler kv namespace create MEMORY`, then paste the
+	// printed id below and remove the leading `//`:
+	//
+	// "kv_namespaces": [
+	//   { "binding": "MEMORY", "id": "<your-namespace-id>" }
+	// ]
 }

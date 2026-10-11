@@ -4,3 +4,24 @@
 # Telegram Bot API Token
 # Get one at https://t.me/BotFather
 API_KEY=your_telegram_bot_token_here
+
+# --- Secretary mode identity --------------------------------------------
+# The owner's display name, used in the assistant sign-off and the AI prompt.
+OWNER_NAME=Kwame
+# The assistant's own name (the bot speaks as the owner, signed by this name).
+BOT_NAME=Noti
+
+# --- Chat lists (comma-separated; ids or @usernames) ---------------------
+# Private chats that must never be answered (secretary silence list).
+BLACKLIST_CHATS=
+# Bot senders that ARE answered (like general questions). Every other bot
+# sender is ignored. Requires Bot-to-Bot Communication Mode in BotFather.
+WHITELISTED_BOTS=
+# Pre-saved contacts: these skip the first-time welcome flow.
+CONTACTS=
+
+# --- Owner notifications -------------------------------------------------
+# Where "personal question" / "Request Human" DMs go. Optional: falls back
+# to the user_chat_id of the latest business connection (the owner's own
+# chat with the bot after they connect it / press "Manage Bot").
+OWNER_CHAT_ID=

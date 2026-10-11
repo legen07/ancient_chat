@@ -102,7 +102,15 @@ describe("POST /api/setWebhook", () => {
     expect(await res.json()).toEqual({ ok: true, url: "https://hooks.example/api/webhook" });
 
     const setCall = calls.find((c) => c.method === "setWebhook");
-    expect(setCall.body).toEqual({ url: "https://hooks.example/api/webhook" });
+    expect(setCall.body).toEqual({
+      url: "https://hooks.example/api/webhook",
+      // The secretary intake needs business updates + callbacks (spec §2).
+      allowed_updates: expect.arrayContaining([
+        "business_message",
+        "business_connection",
+        "callback_query",
+      ]),
+    });
   });
 
   it("redirects an HTML form post back to the page on success", async () => {

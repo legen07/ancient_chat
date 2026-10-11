@@ -12,9 +12,10 @@
  * Docs: https://core.telegram.org/bots/api#streaming-replies
  */
 
-import { buildPrompt, streamCompletion } from "./ai.js";
+import { buildPrompt, streamCompletion, DEFAULT_BOT_NAME, DEFAULT_OWNER_NAME } from "./ai.js";
 import { finalRichMarkdown, partialRichMarkdown, plainText } from "./rich.js";
 import {
+  editMessageReplyMarkup,
   sendMessage,
   sendMessageDraft,
   sendRichMessage,
@@ -50,6 +51,34 @@ export function stopGeneration(chatId, draftId) {
 
   generation.stopped = true;
   return true;
+}
+
+/** Cancel every in-flight generation for a chat (used by the /stop command). */
+export function stopChatGeneration(chatId) {
+  let stopped = 0;
+  for (const [key, generation] of activeGenerations) {
+    if (key.startsWith(chatId + ":")) {
+      generation.stopped = true;
+      stopped += 1;
+    }
+  }
+  return stopped;
+}
+
+/**
+ * Inline keyboard attached to every secretary reply (spec §7).
+ * The message id in the callback data is the reply's own id, so pressing
+ * Delete removes exactly the message the customer pressed it on.
+ */
+export function actionKeyboard(chatId, messageId) {
+  return {
+    inline_keyboard: [
+      [
+        { text: "🗑 Delete", callback_data: "d:" + chatId + ":" + messageId },
+        { text: "👋 Request Human", callback_data: "h:" + chatId + ":" + messageId },
+      ],
+    ],
+  };
 }
 
 /** Refresh the live preview; falls back to a plain-text draft on parse errors. */
@@ -131,7 +160,13 @@ export async function answerMessage({
       }
     }
 
-    const prompt = buildPrompt({ ...from, text });
+    const prompt = buildPrompt({
+      mode: "direct",
+      botName: env.BOT_NAME || DEFAULT_BOT_NAME,
+      ownerName: env.OWNER_NAME || DEFAULT_OWNER_NAME,
+      customer: from,
+      text,
+    });
     let full = "";
     let lastPushedAt = 0;
     let lastPushedLength = 0;
@@ -195,5 +230,100 @@ export async function answerMessage({
     return { ok: true, text: full };
   } finally {
     activeGenerations.delete(key);
+  }
+}
+
+/**
+ * Send one one-shot reply on behalf of the business account (secretary mode).
+ *
+ * Streaming drafts do NOT support business_connection_id (Bot API 10.3, see
+ * spec §0), so this collects nothing and just delivers: Rich Message first,
+ * plain-text fallback, then the action buttons are attached with a follow-up
+ * edit once the reply's own message_id is known.
+ *
+ * @param {object} options
+ * @param {string} options.businessConnectionId
+ * @param {number} options.chatId          Customer chat id.
+ * @param {string} options.text            Reply body (without sign-off).
+ * @param {number} [options.replyToMessageId]  Triggering message to quote.
+ * @param {string} [options.signOffLine]   Appended assistant sign-off, if any.
+ * @param {boolean} [options.withButtons]  Attach Delete / Request Human (default true).
+ * @returns {Promise<{ ok: boolean, messageId: number }>}
+ */
+export async function sendBusinessReply({
+  env,
+  businessConnectionId,
+  chatId,
+  text,
+  replyToMessageId,
+  signOffLine = "",
+  withButtons = true,
+}) {
+  const body = (text || "") + signOffLine;
+
+  const sent = await sendRichMessage(env, {
+    business_connection_id: businessConnectionId,
+    chat_id: chatId,
+    rich_message: finalRichMarkdown(body),
+    ...(replyToMessageId
+      ? { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } }
+      : {}),
+  });
+
+  let messageId = sent && sent.ok && sent.result ? sent.result.message_id : 0;
+
+  if (!sent || !sent.ok) {
+    console.log(
+      "business sendRichMessage failed: " + ((sent && sent.description) || "no response") +
+        " — falling back to plain text",
+    );
+    const fallback = await sendMessage(env, {
+      business_connection_id: businessConnectionId,
+      chat_id: chatId,
+      text: plainText(body),
+      ...(replyToMessageId
+        ? { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } }
+        : {}),
+    });
+
+    if (!fallback || !fallback.ok) {
+      console.log(
+        "business sendMessage failed too: " + ((fallback && fallback.description) || "no response"),
+      );
+      return { ok: false, messageId: 0 };
+    }
+
+    // Buttons still belong on the plain fallback (some business accounts
+    // cannot send rich messages at all) — attach them to the sent message.
+    messageId = fallback.result ? fallback.result.message_id : 0;
+    await attachActionButtons({ env, businessConnectionId, chatId, messageId, withButtons });
+    return { ok: true, messageId };
+  }
+
+  // Buttons need the reply's own message_id, so they ride on a follow-up edit.
+  await attachActionButtons({ env, businessConnectionId, chatId, messageId, withButtons });
+
+  return { ok: true, messageId };
+}
+
+/**
+ * Attach the Delete / Request Human keyboard to an already-sent business
+ * message (best-effort: the reply stands without buttons if the edit fails).
+ */
+async function attachActionButtons({ env, businessConnectionId, chatId, messageId, withButtons }) {
+  if (!withButtons || !messageId) return;
+
+  const edited = await editMessageReplyMarkup(env, {
+    business_connection_id: businessConnectionId,
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: actionKeyboard(chatId, messageId),
+  });
+
+  if (!edited || !edited.ok) {
+    console.log(
+      "editMessageReplyMarkup failed: " + ((edited && edited.description) || "no response") +
+        " — reply stands without buttons",
+    );
   }
 }

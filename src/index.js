@@ -1,5 +1,14 @@
-import { answerMessage, stopGeneration } from "./lib/answer.js";
-import { callTelegram, validateWebhookUrl } from "./lib/telegram.js";
+import { answerMessage, stopGeneration, stopChatGeneration } from "./lib/answer.js";
+import * as canned from "./lib/canned.js";
+import * as memory from "./lib/memory.js";
+import {
+  ALLOWED_UPDATES,
+  handleBusinessConnection,
+  handleBusinessMessage,
+  handleCallbackQuery,
+  handleDeletedBusinessMessages,
+} from "./lib/secretary.js";
+import { callTelegram, sendMessage, validateWebhookUrl } from "./lib/telegram.js";
 import { renderWebhookSettingsPage } from "./pages/webhook-settings.js";
 
 export default {
@@ -22,6 +31,7 @@ export default {
         },
         body: JSON.stringify({
           url: "https://" + domain + "/api/webhook/",
+          allowed_updates: ALLOWED_UPDATES,
         }),
       });
       const text = await res.text();
@@ -100,7 +110,10 @@ export default {
       }
 
       try {
-        const result = await callTelegram(env, "setWebhook", { url: checked.value });
+        const result = await callTelegram(env, "setWebhook", {
+          url: checked.value,
+          allowed_updates: ALLOWED_UPDATES,
+        });
 
         if (!result.ok) {
           const description = result.description || "Telegram rejected this URL.";
@@ -167,9 +180,7 @@ export default {
       });
     }
 
-    // Ask the AI model for a customer-support reply (see src/lib/answer.js —
-    // the reply is streamed into a Telegram Rich Message draft and then
-    // persisted with sendRichMessage).
+    // Secretary intake + direct owner chat (see docs/chats-specs.md).
 
     if (url.endsWith("/api/webhook/")) {
       const bodyText = await request.text();
@@ -188,7 +199,20 @@ export default {
         return new Response("ok");
       }
 
-      // The user pressed Stop on a streaming draft.
+      // Background helper: Telegram only needs a fast "ok"; everything else
+      // runs in waitUntil (falls back to awaiting when no ctx is available).
+      const later = (promise) => {
+        const guarded = promise.catch((err) => {
+          console.log("background task failed: " + (err && err.stack ? err.stack : String(err)));
+        });
+        if (ctx && typeof ctx.waitUntil === "function") {
+          ctx.waitUntil(guarded);
+          return guarded;
+        }
+        return guarded;
+      };
+
+      // The user pressed Stop on a streaming draft (direct chat).
       if (update.stopped_message_generation) {
         const stopped = update.stopped_message_generation;
         const cancelled = stopGeneration(stopped.chat && stopped.chat.id, stopped.draft_id);
@@ -198,38 +222,100 @@ export default {
         return new Response("ok");
       }
 
+      // Bot connected / edited / ended → remember the connection & rights.
+      if (update.business_connection) {
+        later(handleBusinessConnection(env, update.business_connection));
+        return new Response("ok");
+      }
+
+      // A new message landed in one of the owner's private chats — the
+      // secretary decides whether it is answered (spec §3–§6).
+      if (update.business_message) {
+        later(handleBusinessMessage({ env, message: update.business_message }));
+        return new Response("ok");
+      }
+
+      // Messages deleted from a managed chat → forget the transcript.
+      if (update.deleted_business_messages) {
+        later(handleDeletedBusinessMessages(env, update.deleted_business_messages));
+        return new Response("ok");
+      }
+
+      // Delete / Request Human button presses (callback answers, no chat post).
+      if (update.callback_query) {
+        later(handleCallbackQuery({ env, query: update.callback_query }));
+        return new Response("ok");
+      }
+
       if (!update.message || !update.message.text) {
         console.log("Ignoring update without a text message.");
         return new Response("ok");
       }
 
+      // ---------------------------------------------------------- direct mode
+      // Someone (normally the owner) is talking to the bot itself.
+
       const message = update.message;
       const chat = message.chat || { id: message.from.id, type: "private" };
-      console.log("Received message: " + message.text);
+      const text = message.text;
+      console.log("Received message: " + text);
+
+      if (chat.type === "private" && text.startsWith("/")) {
+        const [commandToken] = text.split(/\s+/);
+        const command = commandToken.split("@")[0].toLowerCase();
+        const arg = text.slice(commandToken.length).trim();
+        const botName = env.BOT_NAME || "Noti";
+        const ownerName = env.OWNER_NAME || "the boss";
+
+        if (command === "/start") {
+          // "Manage Bot" deep link: /start bizChat<user_chat_id>.
+          const deepLink = arg.match(/^bizChat(\d+)$/);
+          if (deepLink) {
+            later(memory.setOwnerChatId(env, Number(deepLink[1])));
+            console.log("owner chat id set from deep link: " + deepLink[1]);
+          }
+          await sendMessage(env, {
+            chat_id: chat.id,
+            text: canned.DIRECT_START(ownerName, botName),
+          });
+          return new Response("ok");
+        }
+
+        if (command === "/help") {
+          await sendMessage(env, { chat_id: chat.id, text: canned.DIRECT_HELP });
+          return new Response("ok");
+        }
+
+        if (command === "/stop") {
+          const stopped = stopChatGeneration(chat.id);
+          await sendMessage(env, {
+            chat_id: chat.id,
+            text: stopped ? canned.DIRECT_STOP_OK : "Nothing dey generate right now ✅",
+          });
+          return new Response("ok");
+        }
+
+        await sendMessage(env, { chat_id: chat.id, text: canned.DIRECT_UNKNOWN });
+        return new Response("ok");
+      }
 
       // Draft ids must be non-zero; the message id is unique per chat and
       // makes follow-up drafts animate instead of swapping abruptly.
       const draftId =
         message.message_id > 0 ? message.message_id : Math.floor(Math.random() * 1000000000);
 
-      // Answer in the background: Telegram only needs a fast "ok", while the
-      // streamed draft updates go out as separate Bot API calls.
-      const task = answerMessage({
-        env,
-        chat,
-        draftId,
-        from: message.from || {},
-        text: message.text,
-        threadId: message.message_thread_id,
-      }).catch((err) => {
-        console.log("Failed to answer message: " + (err && err.stack ? err.stack : String(err)));
-      });
-
-      if (ctx && typeof ctx.waitUntil === "function") {
-        ctx.waitUntil(task);
-      } else {
-        await task;
-      }
+      // Answer in the background: the streamed draft updates go out as
+      // separate Bot API calls (direct chat keeps the streaming pipeline).
+      later(
+        answerMessage({
+          env,
+          chat,
+          draftId,
+          from: message.from || {},
+          text,
+          threadId: message.message_thread_id,
+        }),
+      );
 
       return new Response("ok");
     }
